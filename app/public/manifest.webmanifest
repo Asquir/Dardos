@@ -1,0 +1,10 @@
+{
+  "name": "Diana Legends",
+  "short_name": "Diana Legends",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#0b0f24",
+  "theme_color": "#0b0f24",
+  "icons": [{ "src": "/icon.png", "sizes": "1024x1024", "type": "image/png" }]
+}

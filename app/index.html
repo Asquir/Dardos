@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b0f24" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="description" content="Diana Legends: dardos 3D realistas. Juega contra bots y online, colecciona dardos, abre cofres y sube de arena." />
+    <link rel="icon" type="image/png" href="/icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <title>Diana Legends</title>
+    <style>
+      html,body{margin:0;height:100%;background:#0b0f24;overflow:hidden}
+      #splash{position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;background:radial-gradient(circle at 50% 40%,#2a3590,#0b0f24 70%);transition:opacity .5s ease;font-family:'Arial Black',system-ui,sans-serif;color:#fff}
+      #splash.hide{opacity:0;pointer-events:none}
+      #splash .t1{font-size:58px;line-height:.9;background:linear-gradient(180deg,#fff6b0,#ffb300 60%,#ff7a00);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;filter:drop-shadow(0 5px 0 rgba(90,40,0,.7))}
+      #splash .t2{font-size:36px;letter-spacing:.1em;text-shadow:0 4px 0 #1d2d86}
+      #splash .ld{width:220px;height:14px;border-radius:7px;background:rgba(0,0,0,.4);overflow:hidden;border:1px solid rgba(255,255,255,.2)}
+      #splash .ld i{display:block;height:100%;width:5%;background:linear-gradient(90deg,#ffe066,#ffa600);transition:width .3s}
+      #splash .target{width:110px;height:110px;border-radius:50%;background:radial-gradient(circle,#c3162a 0 9%,#0b8a45 9% 18%,#ece0bf 18% 45%,#c3162a 45% 52%,#161514 52% 80%,#0b8a45 80% 86%,#111 86%);box-shadow:0 10px 30px rgba(0,0,0,.6);animation:spin 3s linear infinite}
+      @keyframes spin{to{transform:rotate(360deg)}}
+      #splash-msg{font:700 13px system-ui,sans-serif;color:#a3afe0;max-width:80%;text-align:center}
+    </style>
+  </head>
+  <body>
+    <canvas id="gl"></canvas>
+    <div id="app"></div>
+    <div id="splash">
+      <div class="target"></div>
+      <div style="text-align:center"><div class="t1">DIANA</div><div class="t2">LEGENDS</div></div>
+      <div class="ld"><i id="splash-bar"></i></div>
+      <div id="splash-msg">Preparando la diana...</div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

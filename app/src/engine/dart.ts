@@ -238,7 +238,7 @@ export function buildDart(look: DartLook, opts: { shadows?: boolean } = {}): Dar
   const pointG = part('point');
   const steel = cachedMat(
     'steel',
-    () => new THREE.MeshPhysicalMaterial({ color: 0xdfe2e8, metalness: 1, roughness: 0.2, anisotropy: 0.6, clearcoat: 0.2 }),
+    () => new THREE.MeshPhysicalMaterial({ color: 0xdfe2e8, metalness: 1, roughness: 0.24, anisotropy: 0.6, clearcoat: 0.2, clearcoatRoughness: 0.2 }),
   );
   pointG.add(new THREE.Mesh(cached('pointx', () => new THREE.LatheGeometry(pointProfile(), 20)), steel));
 
@@ -250,9 +250,9 @@ export function buildDart(look: DartLook, opts: { shadows?: boolean } = {}): Dar
     const m = new THREE.MeshPhysicalMaterial({
       color: bd.color,
       metalness: bd.metalness,
-      roughness: bd.roughness,
+      roughness: Math.max(0.22, bd.roughness),
       clearcoat: metal ? 0.4 : 0.8,
-      clearcoatRoughness: 0.12,
+      clearcoatRoughness: 0.16,
       // tungsteno torneado: brillo cepillado en círculos
       anisotropy: metal ? 0.55 : 0,
       anisotropyRotation: Math.PI / 2,
@@ -282,7 +282,7 @@ export function buildDart(look: DartLook, opts: { shadows?: boolean } = {}): Dar
     }
   } else if (bd.rarity === 'epic' || bd.rarity === 'rare') {
     // banda anodizada de color en la nariz del cuerpo
-    const band = cachedMat('band_' + bd.id, () => new THREE.MeshPhysicalMaterial({ color: new THREE.Color(bd.color).offsetHSL(0, 0.2, 0.1), metalness: 0.9, roughness: 0.25, clearcoat: 1 }));
+    const band = cachedMat('band_' + bd.id, () => new THREE.MeshPhysicalMaterial({ color: new THREE.Color(bd.color).offsetHSL(0, 0.2, 0.1), metalness: 0.9, roughness: 0.25, clearcoat: 1, clearcoatRoughness: 0.18 }));
     const bg = cached('bandRing_' + bd.id, () => new THREE.TorusGeometry(bd.radius * MM * 0.82, 0.28 * MM, 8, 40));
     const ring = new THREE.Mesh(bg, band);
     ring.rotation.x = Math.PI / 2;
@@ -302,17 +302,18 @@ export function buildDart(look: DartLook, opts: { shadows?: boolean } = {}): Dar
   const sGeo = cached('shaftx_' + sd.length, () => new THREE.LatheGeometry(shaftProfile(SL), 32));
   const sMat = cachedMat('shaftx_' + sd.id, () => {
     if (sd.id === 's_carbon')
-      return new THREE.MeshPhysicalMaterial({ map: carbonWeave(), metalness: 0.3, roughness: 0.35, clearcoat: 1, clearcoatRoughness: 0.05 });
+      return new THREE.MeshPhysicalMaterial({ map: carbonWeave(), metalness: 0.3, roughness: 0.35, clearcoat: 1, clearcoatRoughness: 0.16 });
     if (sd.id === 's_titan')
-      return new THREE.MeshPhysicalMaterial({ color: '#d9d2ff', metalness: 1, roughness: 0.18, iridescence: 1, iridescenceIOR: 2.1, iridescenceThicknessRange: [220, 820], clearcoat: 0.6 });
+      return new THREE.MeshPhysicalMaterial({ color: '#d9d2ff', metalness: 1, roughness: 0.18, iridescence: 1, iridescenceIOR: 2.1, iridescenceThicknessRange: [220, 820], clearcoat: 0.6, clearcoatRoughness: 0.18 });
     const metal = sd.metalness > 0.5;
     const m = new THREE.MeshPhysicalMaterial({
       color: sd.color,
       metalness: sd.metalness,
-      roughness: sd.roughness,
-      clearcoat: metal ? 0.6 : 0.7,
-      clearcoatRoughness: 0.08,
-      anisotropy: metal ? 0.5 : 0,
+      // la caña es fina: con poca rugosidad su reflejo alargado brillaba como un sable de luz
+      roughness: Math.max(0.3, sd.roughness),
+      clearcoat: metal ? 0.4 : 0.7,
+      clearcoatRoughness: 0.2,
+      anisotropy: metal ? 0.25 : 0,
       anisotropyRotation: Math.PI / 2,
     });
     if (sd.emissive) {
@@ -326,7 +327,7 @@ export function buildDart(look: DartLook, opts: { shadows?: boolean } = {}): Dar
   shaftG.add(shaft);
   // anillo metálico de la cabeza (sujeta las aletas)
   if (sd.metalness > 0.5 || sd.rarity !== 'common') {
-    const ringM = cachedMat('shaftRing_' + sd.id, () => new THREE.MeshPhysicalMaterial({ color: sd.id === 's_gold' ? '#ffe08a' : '#e6e9ef', metalness: 1, roughness: 0.15 }));
+    const ringM = cachedMat('shaftRing_' + sd.id, () => new THREE.MeshPhysicalMaterial({ color: sd.id === 's_gold' ? '#ffe08a' : '#e6e9ef', metalness: 1, roughness: 0.24 }));
     const tr = new THREE.Mesh(cached('shaftTopRing', () => new THREE.TorusGeometry(2.85 * MM, 0.32 * MM, 8, 32)), ringM);
     tr.rotation.x = Math.PI / 2;
     tr.position.y = POINT_LEN + L - 2 * MM + SL - 2.2 * MM;
@@ -345,7 +346,7 @@ export function buildDart(look: DartLook, opts: { shadows?: boolean } = {}): Dar
         roughness: 0.4,
         metalness: fd.design === 'gold' || fd.design === 'ev_crown' ? 0.6 : 0.05,
         clearcoat: 0.9,
-        clearcoatRoughness: 0.1,
+        clearcoatRoughness: 0.18,
         // aletas holográficas en las raras de verdad
         iridescence: holo ? 0.75 : 0,
         iridescenceIOR: 1.7,
@@ -365,7 +366,7 @@ export function buildDart(look: DartLook, opts: { shadows?: boolean } = {}): Dar
   flightG.position.y = flightBase;
   // protector de aleta metálico en las épicas y legendarias
   if (fd.rarity === 'epic' || fd.rarity === 'legendary') {
-    const pm = cachedMat('protector_' + fd.rarity, () => new THREE.MeshPhysicalMaterial({ color: fd.rarity === 'legendary' ? '#ffd56a' : '#d8dce4', metalness: 1, roughness: 0.18, clearcoat: 0.5 }));
+    const pm = cachedMat('protector_' + fd.rarity, () => new THREE.MeshPhysicalMaterial({ color: fd.rarity === 'legendary' ? '#ffd56a' : '#d8dce4', metalness: 1, roughness: 0.24, clearcoat: 0.5, clearcoatRoughness: 0.2 }));
     const cap = new THREE.Mesh(cached('protector', () => new THREE.CylinderGeometry(1.9 * MM, 2.3 * MM, 3.2 * MM, 20)), pm);
     cap.position.y = 37 * MM;
     flightG.add(cap);

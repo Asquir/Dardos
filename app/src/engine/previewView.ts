@@ -13,16 +13,16 @@ import { getItem, type Rarity, RARITY_INFO } from '../meta/catalog';
 export type DartPart = 'all' | 'barrel' | 'shaft' | 'flight';
 
 const RARITY_FX: Record<Rarity, { rays: number; sparks: number; rim: number }> = {
-  common: { rays: 0, sparks: 0.25, rim: 1.1 },
-  rare: { rays: 0.05, sparks: 0.5, rim: 1.4 },
-  epic: { rays: 0.08, sparks: 0.75, rim: 1.7 },
-  legendary: { rays: 0.11, sparks: 1, rim: 2 },
+  common: { rays: 0, sparks: 0.2, rim: 0.9 },
+  rare: { rays: 0.025, sparks: 0.4, rim: 1.1 },
+  epic: { rays: 0.04, sparks: 0.55, rim: 1.3 },
+  legendary: { rays: 0.055, sparks: 0.7, rim: 1.5 },
 };
 
 function studioBackdrop(): THREE.Texture {
   const [c, ctx] = makeCanvas(512, 512);
   const g = ctx.createRadialGradient(256, 200, 10, 256, 260, 380);
-  g.addColorStop(0, '#2a3a8a');
+  g.addColorStop(0, '#22306e');
   g.addColorStop(0.45, '#141a48');
   g.addColorStop(1, '#04050f');
   ctx.fillStyle = g;
@@ -50,8 +50,10 @@ function raysTexture(): THREE.Texture {
   ctx.translate(256, 256);
   for (let i = 0; i < 18; i++) {
     ctx.rotate((Math.PI * 2) / 18);
+    // sin centro: los 18 rayos sumados allí hacían un foco blanco detrás del dardo
     const g = ctx.createLinearGradient(0, 0, 256, 0);
-    g.addColorStop(0, 'rgba(255,255,255,0.9)');
+    g.addColorStop(0, 'rgba(255,255,255,0)');
+    g.addColorStop(0.25, 'rgba(255,255,255,0.55)');
     g.addColorStop(1, 'rgba(255,255,255,0)');
     ctx.fillStyle = g;
     ctx.beginPath();
@@ -78,8 +80,8 @@ function fadeTexture(): THREE.Texture {
 export class PreviewView implements View {
   scene = new THREE.Scene();
   camera = new THREE.PerspectiveCamera(30, 1, 0.01, 30);
-  bloom = { strength: 0.38, radius: 0.45, threshold: 0.92 };
-  exposure = 0.92;
+  bloom = { strength: 0.26, radius: 0.4, threshold: 0.96 };
+  exposure = 0.86;
   grade = { vignette: 0.42, aberration: 0.12, saturation: 1.08, contrast: 1.06, grain: 0.012 };
   private dart: DartModel | null = null;
   private pivot = new THREE.Group();
@@ -106,9 +108,9 @@ export class PreviewView implements View {
   focusPart: DartPart = 'all';
 
   constructor() {
-    this.scene.environmentIntensity = 0.5;
+    this.scene.environmentIntensity = 0.42;
     this.roller.rotation.order = 'ZYX';
-    this.key = new THREE.DirectionalLight(0xfff3e4, 1.35);
+    this.key = new THREE.DirectionalLight(0xfff3e4, 1.15);
     this.key.position.set(0.6, 1.2, 1.1);
     this.rim = new THREE.DirectionalLight(0x88aaff, 1.6);
     this.rim.position.set(-1.2, 0.6, -1.1);
@@ -146,7 +148,7 @@ export class PreviewView implements View {
     this.scene.add(fade);
     const glow = new THREE.Mesh(
       new THREE.PlaneGeometry(0.5, 0.5),
-      new THREE.MeshBasicMaterial({ map: glowTexture(), color: 0x4a70ff, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false }),
+      new THREE.MeshBasicMaterial({ map: glowTexture(), color: 0x4a70ff, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false }),
     );
     glow.rotation.x = -Math.PI / 2;
     glow.position.y = floorY + 0.001;
@@ -164,7 +166,7 @@ export class PreviewView implements View {
     }
     const sg = new THREE.BufferGeometry();
     sg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    this.sparks = new THREE.Points(sg, new THREE.PointsMaterial({ map: glowTexture(), size: 0.008, color: 0xffffff, transparent: true, opacity: 0.6, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
+    this.sparks = new THREE.Points(sg, new THREE.PointsMaterial({ map: glowTexture(), size: 0.006, color: 0xffffff, transparent: true, opacity: 0.45, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
     this.sparks.frustumCulled = false;
     this.scene.add(this.sparks);
 
@@ -211,14 +213,14 @@ export class PreviewView implements View {
         new THREE.TorusGeometry(0.01, 0.0009, 8, 64),
         new THREE.MeshBasicMaterial({ color: RARITY_INFO[this.rarity].glow, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
       );
-      m.position.z = this.partZ() ;
+      m.position.z = this.partZ();
       m.userData.delay = i * 0.12;
       this.dart.group.add(m);
       rings.push(m);
     }
     this.burst = { rings, t: 0 };
     this.yawVel += 0.5;
-    engine.doFlash(0.35);
+    engine.doFlash(0.2);
   }
 
   onPointer(kind: 'down' | 'move' | 'up', dx = 0) {
@@ -291,7 +293,7 @@ export class PreviewView implements View {
     this.rays.rotation.z = t * 0.12;
     this.rays.position.copy(this.camTarget).add(new THREE.Vector3(0, 0, -0.35));
     const sm = this.sparks.material as THREE.PointsMaterial;
-    sm.opacity = 0.75 * fx.sparks;
+    sm.opacity = 0.6 * fx.sparks;
     const sp = this.sparks.geometry.attributes.position as THREE.BufferAttribute;
     for (let i = 0; i < sp.count; i++) {
       const life = (this.sparkSeed[i * 3 + 1] + t * 0.12) % 1;
@@ -308,7 +310,7 @@ export class PreviewView implements View {
     const scm = this.scanner.material as THREE.MeshBasicMaterial;
     // solo en el cuerpo y la caña: en las aletas se veía como una barra de luz
     const scanning = this.focusPart === 'barrel' || this.focusPart === 'shaft';
-    scm.opacity += ((scanning ? 0.85 : 0) - scm.opacity) * k;
+    scm.opacity += ((scanning ? 0.6 : 0) - scm.opacity) * k;
     this.scanner.visible = scm.opacity > 0.02;
     if (this.dart && scanning) {
       const half = this.focusPart === 'barrel' ? 0.024 : 0.018;

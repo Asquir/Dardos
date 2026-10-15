@@ -33,11 +33,21 @@ const T0 = performance.now();
 const mark = (n: string) => DEBUG && console.info(`[arranque] ${n}: ${Math.round(performance.now() - T0)} ms`);
 const frame = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
 
+const AUTO_Q_KEY = 'diana_auto_quality';
+const Q_ORDER: Quality[] = ['low', 'medium', 'high'];
+
 function autoQuality(): Quality {
   const cores = navigator.hardwareConcurrency || 4;
   const mem = (navigator as unknown as { deviceMemory?: number }).deviceMemory ?? 4;
-  if (cores <= 4 || mem <= 3) return 'medium';
-  return 'high';
+  const guess: Quality = cores <= 4 || mem <= 3 ? 'medium' : 'high';
+  // si en una sesión anterior hubo que bajarla, se arranca ya así (sin cambio de imagen a media partida)
+  let learned: Quality | null = null;
+  try {
+    learned = localStorage.getItem(AUTO_Q_KEY) as Quality | null;
+  } catch {
+    /* sin almacenamiento */
+  }
+  return learned && Q_ORDER.indexOf(learned) >= 0 && Q_ORDER.indexOf(learned) < Q_ORDER.indexOf(guess) ? learned : guess;
 }
 
 async function boot() {
@@ -50,7 +60,14 @@ async function boot() {
   const forced = new URLSearchParams(location.search).get('q') as Quality | null;
   const q = forced ?? (p.settings.quality === 'auto' ? autoQuality() : p.settings.quality);
   engine.init(document.getElementById('gl') as HTMLCanvasElement, q);
-  engine.onQualityDrop = (nq) => console.info('Calidad ajustada automáticamente a', nq);
+  engine.onQualityDrop = (nq) => {
+    console.info('Calidad ajustada automáticamente a', nq);
+    try {
+      localStorage.setItem(AUTO_Q_KEY, nq);
+    } catch {
+      /* sin almacenamiento */
+    }
+  };
   mark('motor');
   await frame();
   // genera texturas y la escena principal (lo más pesado)

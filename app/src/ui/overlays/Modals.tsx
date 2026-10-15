@@ -631,7 +631,16 @@ function SettingsModal() {
     if (k === 'sfx' || k === 'music') audio.setVolumes(k === 'sfx' ? (v as number) : s.sfx, k === 'music' ? (v as number) : s.music);
     if (k === 'voice') audio.voice = v as boolean;
     if (k === 'vibration') hap.setEnabled(v as boolean);
-    if (k === 'quality') engine.setQuality(v === 'auto' ? 'high' : (v as 'high'));
+    if (k === 'quality') {
+      if (v === 'auto') {
+        try {
+          localStorage.removeItem('diana_auto_quality');
+        } catch {
+          /* sin almacenamiento */
+        }
+        engine.setAutoQuality('high');
+      } else engine.setQuality(v as 'high');
+    }
   };
   const [server, setServer] = useState(s.serverUrl);
   const row = (label: string, ctl: preact.ComponentChildren) => (

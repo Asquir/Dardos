@@ -985,7 +985,7 @@ export class GameView implements View {
         const chase = flyingNow ? tmpV.clone().set(dp.x + 0.03, dp.y + 0.045, dp.z + 0.34) : tmpV.clone().set(c.target.x + 0.035, c.target.y + 0.03, 0.42);
         pos.lerp(chase, k * 0.9);
         look.lerp(c.target, k);
-        this.grade = { ...this.baseGrade, vignette: (this.baseGrade.vignette ?? 0.45) + 0.3 * k, saturation: (this.baseGrade.saturation ?? 1) * (1 - 0.35 * k * (flyingNow ? 1 : 0)), aberration: 0.3 + 0.45 * k };
+        this.grade = { ...this.baseGrade, vignette: (this.baseGrade.vignette ?? 0.45) + 0.14 * k, saturation: (this.baseGrade.saturation ?? 1) * (1 - 0.2 * k * (flyingNow ? 1 : 0)), aberration: 0.3 + 0.45 * k };
         if (c.w <= 0 && !c.active) {
           this.cine = null;
           engine.timeScale = 1;

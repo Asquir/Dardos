@@ -2516,7 +2516,7 @@ img {
   width: 700px;
   height: 700px;
   margin: -350px 0 0 -350px;
-  background: repeating-conic-gradient(from 0deg, color-mix(in srgb, var(--rc) 40%, transparent) 0deg 8deg, transparent 8deg 22deg);
+  background: repeating-conic-gradient(from 0deg, color-mix(in srgb, var(--rc) 26%, transparent) 0deg 8deg, transparent 8deg 22deg);
   mask-image: radial-gradient(circle, #000 10%, transparent 60%);
   -webkit-mask-image: radial-gradient(circle, #000 10%, transparent 60%);
   animation: spin 8s linear infinite;

@@ -285,19 +285,11 @@ export function buildEnvironment(theme: ArenaTheme, quality: 'low' | 'medium' | 
     const glow = new THREE.PointLight(n.color, 0.14, 0, 2);
     glow.position.set(n.x, n.y, 0.35);
     g.add(glow);
-    // parpadeo ocasional
+    // zumbido suave del neón (sin apagones: en el móvil parecía que se iba la luz)
     const base = m.material as THREE.MeshBasicMaterial;
-    let flick = 0;
-    updaters.push((_t, dt) => {
-      if (flick <= 0 && r() < dt * 0.08) flick = 0.25;
-      if (flick > 0) {
-        flick -= dt;
-        base.opacity = r() < 0.5 ? 0.35 : 1;
-        glow.intensity = base.opacity * 0.14;
-      } else {
-        base.opacity = 1;
-        glow.intensity = 0.14;
-      }
+    const ph = r() * 6;
+    updaters.push((t) => {
+      base.opacity = 0.93 + Math.sin(t * 1.3 + ph) * 0.05;
     });
   }
 
@@ -331,7 +323,7 @@ export function buildEnvironment(theme: ArenaTheme, quality: 'low' | 'medium' | 
           lan.position.set(x, 1.9, 0.05);
           g.add(lan);
           updaters.push((t) => {
-            (glass.material as THREE.MeshBasicMaterial).opacity = 0.8 + Math.sin(t * 9 + x) * 0.08 + Math.sin(t * 23) * 0.05;
+            (glass.material as THREE.MeshBasicMaterial).opacity = 0.86 + Math.sin(t * 1.6 + x) * 0.04 + Math.sin(t * 2.9) * 0.02;
           });
         }
         break;

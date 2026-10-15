@@ -122,6 +122,7 @@ class Engine {
   private running = false;
   private flash = 0;
   private fpsSamples: number[] = [];
+  private settle = 0;
   private autoQuality = true;
   onQualityDrop?: (q: Quality) => void;
   width = 1;
@@ -168,6 +169,15 @@ class Engine {
     this.renderPass = new RenderPass(new THREE.Scene(), new THREE.PerspectiveCamera());
     this.composer.addPass(this.renderPass);
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.35, 0.55, 0.88);
+    // En las GPU de móvil (render a 16 bits) un reflejo especular muy fino puede valer miles o
+    // infinito: el bloom lo extendía en destellos que parpadeaban al girar el dardo. Se recorta
+    // el brillo que entra al bloom (no cambia el resto de la imagen).
+    const hp = this.bloom.materialHighPassFilter;
+    hp.fragmentShader = hp.fragmentShader.replace(
+      'vec4 texel = texture2D( tDiffuse, vUv );',
+      'vec4 texel = texture2D( tDiffuse, vUv ); texel.rgb = clamp( texel.rgb, 0.0, 3.0 );',
+    );
+    hp.needsUpdate = true;
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
     this.grade = new ShaderPass(GradeShader);
@@ -182,15 +192,43 @@ class Engine {
   setQuality(q: Quality, manual = true) {
     if (manual) this.autoQuality = false;
     if (q === this.quality) return;
+    const shadowsBefore = this.renderer.shadowMap.enabled;
     this.quality = q;
     this.renderer.shadowMap.enabled = q !== 'low';
     this.setupComposer();
+    // el compositor nuevo nace con una escena vacía: sin esto la partida se quedaba a oscuras
+    this.bindView();
     this.resize();
+    this.fpsSamples = [];
+    this.settle = 90;
     // las luces necesitan recompilar materiales al cambiar sombras
-    this.view?.scene.traverse((o) => {
-      const m = (o as THREE.Mesh).material as THREE.Material | undefined;
-      if (m) m.needsUpdate = true;
-    });
+    if (shadowsBefore !== this.renderer.shadowMap.enabled)
+      this.view?.scene.traverse((o) => {
+        const m = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+        for (const x of Array.isArray(m) ? m : m ? [m] : []) x.needsUpdate = true;
+      });
+  }
+
+  /** Vuelve al modo automático: empieza en q y baja sola si el móvil no llega a 38 fps. */
+  setAutoQuality(q: Quality) {
+    this.setQuality(q, false);
+    this.autoQuality = true;
+  }
+
+  /** Conecta la vista actual al compositor (escena, cámara, bloom y exposición). */
+  private bindView() {
+    const v = this.view;
+    if (!v) return;
+    if (this.renderPass) {
+      this.renderPass.scene = v.scene;
+      this.renderPass.camera = v.camera;
+    }
+    if (this.bloom && v.bloom) {
+      this.bloom.strength = v.bloom.strength;
+      this.bloom.radius = v.bloom.radius;
+      this.bloom.threshold = v.bloom.threshold;
+    }
+    this.renderer.toneMappingExposure = v.exposure ?? 1;
   }
 
   resize() {
@@ -218,16 +256,10 @@ class Engine {
     this.view?.onDeactivate?.();
     this.view = v;
     v.scene.environment = this.envMap;
-    if (this.renderPass) {
-      this.renderPass.scene = v.scene;
-      this.renderPass.camera = v.camera;
-    }
-    if (this.bloom && v.bloom) {
-      this.bloom.strength = v.bloom.strength;
-      this.bloom.radius = v.bloom.radius;
-      this.bloom.threshold = v.bloom.threshold;
-    }
-    this.renderer.toneMappingExposure = v.exposure ?? 1;
+    this.bindView();
+    // los primeros fotogramas compilan shaders: no cuentan para medir el rendimiento
+    this.fpsSamples = [];
+    this.settle = 90;
     v.camera.aspect = this.width / this.height;
     v.camera.updateProjectionMatrix();
     v.resize?.(this.width, this.height);
@@ -281,11 +313,17 @@ class Engine {
 
   private trackFps(dt: number) {
     if (!this.autoQuality) return;
+    if (this.settle > 0) {
+      this.settle--;
+      return;
+    }
     this.fpsSamples.push(dt);
     if (this.fpsSamples.length >= 180) {
       const avg = this.fpsSamples.reduce((a, b) => a + b, 0) / this.fpsSamples.length;
       this.fpsSamples = [];
-      if (avg > 1 / 38 && this.quality !== 'low') {
+      // a "baja" solo si va muy justo: pierde el bloom y los haces de luz y la imagen cambia mucho
+      const limit = this.quality === 'high' ? 1 / 38 : 1 / 26;
+      if (avg > limit && this.quality !== 'low') {
         const q: Quality = this.quality === 'high' ? 'medium' : 'low';
         this.setQuality(q, false);
         this.onQualityDrop?.(q);

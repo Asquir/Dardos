@@ -29,7 +29,8 @@ export function startOnline(m: Extract<ServerMsg, { t: 'match_start' }>, arenaId
   };
   audio.levelUp();
   go('game');
-  startMatch(setup, m.state);
+  const match = startMatch(setup, m.state);
+  if (m.deadline) match.setDeadline(m.deadline, m.serverNow);
 }
 
 /** Si el servidor nos reenvía una partida en curso (reconexión), la retomamos. */
@@ -37,7 +38,11 @@ export function initOnlineHandlers() {
   net.on('match_start', (m) => {
     if (ui.get().screen === 'matchmaking') return; // lo gestiona la pantalla de búsqueda
     const cur = currentMatch();
-    if (cur && matchStore.get() && cur.setup.online?.matchId === m.matchId) return;
+    if (cur && matchStore.get() && cur.setup.online?.matchId === m.matchId) {
+      // reconexión a la partida en curso: retomamos el estado del servidor
+      if (!matchStore.get()?.result) cur.resync(m);
+      return;
+    }
     startOnline(m);
   });
 }

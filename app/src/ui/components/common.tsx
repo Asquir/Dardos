@@ -54,9 +54,14 @@ export function AvatarImg({ cfg, size = 128, h, frame = 'head', pose = 'idle', c
   const key = JSON.stringify(cfg) + size + 'x' + hh + frame + pose;
   const src = useMemo(() => {
     let s = avCache.get(key);
-    if (!s) {
+    if (s) {
+      // LRU: lo usado recientemente pasa al final
+      avCache.delete(key);
+      avCache.set(key, s);
+    } else {
       s = avatarShot(cfg, frame, size, hh, pose);
       avCache.set(key, s);
+      if (avCache.size > 160) avCache.delete(avCache.keys().next().value!);
     }
     return s;
   }, [key]);

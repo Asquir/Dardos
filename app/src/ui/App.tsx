@@ -73,6 +73,8 @@ export function App() {
     }
     const v = gameView();
     if (v.mode !== 'menu' || v.isAiming) v.setMenuMode(true);
+    // dardos de exhibición en el fondo del inicio
+    v.attract = s.screen === 'home' && !!p.tutorial.done;
     v.setArena(p.selectedArena);
     v.setBoardStyle(p.boardSkin as 'classic');
     v.setDecorLook(p.equipped);

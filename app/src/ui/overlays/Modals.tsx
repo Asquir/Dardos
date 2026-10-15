@@ -467,13 +467,7 @@ function LevelUpModal({ level, reward }: { level: number; reward: import('../../
         </div>
         <RewardList reward={{ coins: reward.coins, gems: reward.gems }} />
         {reward.chest && <div class="muted" style={{ fontWeight: 800 }}>¡Y un {CHESTS[reward.chest].name}!</div>}
-        <button
-          class="btn block big"
-          onClick={() => {
-            closeModal();
-            if (reward.chest) claim({ chest: reward.chest }, `Nivel ${level}`);
-          }}
-        >
+        <button class="btn block big" onClick={() => (audio.click(), closeModal())}>
           ¡Genial!
         </button>
       </div>
@@ -671,7 +665,7 @@ function SettingsModal() {
           }}
         />,
       )}
-      {row('Ayuda de cierres', <Toggle on={s.showCheckout} onChange={(v) => set('showCheckout', v)} />)}
+      {row('Zona objetivo y cierres', <Toggle on={s.showCheckout} onChange={(v) => set('showCheckout', v)} />)}
       {row('Zurdo', <Toggle on={s.leftHanded} onChange={(v) => set('leftHanded', v)} />)}
       <div style={{ padding: '9px 0', borderBottom: '1px solid var(--stroke)' }}>
         <div style={{ fontWeight: 800, marginBottom: '6px' }}>Lanzamiento</div>

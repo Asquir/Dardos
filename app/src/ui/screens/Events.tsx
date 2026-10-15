@@ -1,13 +1,13 @@
 // Eventos: torneo, desafío diario, entrenamientos, partida local y sala privada.
 
 import { useStore, dayKey, fmtNum, useNow, fmtTime } from '../../core/store';
-import { profileStore, mutate, profile } from '../../meta/profile';
+import { profileStore } from '../../meta/profile';
 import { FEATURE_LEVEL, todaysChallenge } from '../../meta/progression';
 import { go, openModal, toast } from '../state';
 import { audio } from '../../services/audio';
 import { challengeSetup, launch, trainingSetup, localSetup } from '../../game/launch';
 import type { MatchResult } from '../../game/match';
-import { claim } from '../rewards';
+import { showPost } from '../rewards';
 import { Modal } from '../components/common';
 import { closeModal } from '../state';
 import { useState } from 'preact/hooks';
@@ -117,27 +117,8 @@ function startTraining(kind: Parameters<typeof trainingSetup>[0], vsBot: boolean
 
 /** Tras el desafío diario: estrellas nuevas = premio. */
 export function challengeAfterMatch(r: MatchResult) {
-  const ch = todaysChallenge();
-  const p = profile();
-  const today = dayKey();
-  const prevStars = p.challenge.day === today ? p.challenge.claimed : 0;
-  const stars = r.stars ?? 0;
-  mutate((pp) => {
-    if (pp.challenge.day !== today) pp.challenge = { day: today, best: 0, claimed: 0 };
-    pp.challenge.best = Math.max(pp.challenge.best, r.challengeScore ?? 0);
-    pp.challenge.claimed = Math.max(pp.challenge.claimed, stars);
-  });
   go('events');
-  if (stars > prevStars) {
-    const reward = { coins: 0, gems: 0 } as { coins: number; gems: number; chest?: 'silver' };
-    for (let s = prevStars; s < stars; s++) {
-      const rw = ch.rewards[s];
-      reward.coins += rw.coins ?? 0;
-      reward.gems += rw.gems ?? 0;
-      if (rw.chest) reward.chest = rw.chest as 'silver';
-    }
-    claim(reward, `¡${stars} estrella${stars > 1 ? 's' : ''}!`);
-  } else toast(stars ? 'Ya tenías estas estrellas hoy. ¡Inténtalo para más!' : 'Sin estrellas esta vez. ¡Prueba otra vez!');
+  showPost(r.post);
 }
 
 export function LocalSetupModal() {

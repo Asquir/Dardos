@@ -134,7 +134,7 @@ class Match {
 
   sendStart(i: number) {
     const profiles = this.ids.map((id) => publicOf(id)!) as PublicProfile[];
-    send(this.players[i], { t: 'match_start', matchId: this.id, config: this.config, you: i, players: profiles, state: this.state, ranked: this.ranked });
+    send(this.players[i], { t: 'match_start', matchId: this.id, config: this.config, you: i, players: profiles, state: this.state, ranked: this.ranked, deadline: this.deadline, serverNow: Date.now() });
   }
 
   broadcast(m: ServerMsg) {
@@ -165,8 +165,8 @@ class Match {
     const res = applyThrow(this.state, hit);
     this.state = res.state;
     if (this.state.current !== prevTurn || res.event !== 'dart') this.armTimer();
-    this.broadcast({ t: 'state', state: this.state, last: { player: i, hit, event: res.event }, deadline: this.deadline });
-    if (res.event === 'matchWon') this.end(i, 'win');
+    this.broadcast({ t: 'state', state: this.state, last: { player: i, hit, event: res.event }, deadline: this.deadline, serverNow: Date.now() });
+    if (res.event === 'matchWon') this.end(this.state.winner ?? i, 'win');
   }
 
   timeout() {
@@ -175,7 +175,9 @@ class Match {
     const res = forfeitTurn(this.state, (k) => makeHit(999 + k, 999, 'MISS', 0));
     this.state = res.state;
     this.armTimer();
-    this.broadcast({ t: 'state', state: this.state, last: { player: p, hit: makeHit(999, 999, 'MISS', 0), event: res.event }, deadline: this.deadline, timeout: true });
+    this.broadcast({ t: 'state', state: this.state, last: { player: p, hit: makeHit(999, 999, 'MISS', 0), event: res.event }, deadline: this.deadline, timeout: true, serverNow: Date.now() });
+    // un turno agotado también puede cerrar la partida (límite de rondas)
+    if (res.event === 'matchWon') this.end(this.state.winner ?? 1 - p, 'win');
   }
 
   disconnected(c: Conn) {

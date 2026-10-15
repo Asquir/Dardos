@@ -1,9 +1,9 @@
 // Controlador de partida: une reglas, jugadores (humano, bot, online), la vista 3D y la interfaz.
 
-import { resolveHit, scoreAt, type Hit } from '@shared/board';
+import { resolveHit, scoreAt, targetPoint, type Hit } from '@shared/board';
 import { applyThrow, createMatch, forfeitTurn, threeDartAvg, type MatchConfig, type MatchState, type ThrowEvent } from '@shared/rules';
-import { botThrow, rng, type BotProfile } from '@shared/bot';
-import { checkoutRoute, routeLabel } from '@shared/checkout';
+import { botThrow, chooseTarget, rng, type BotProfile } from '@shared/bot';
+import { checkoutRoute, routeLabel, suggestTarget } from '@shared/checkout';
 import { trophyDelta, type AvatarConfig, type DartLook, type ServerMsg } from '@shared/protocol';
 import { Store } from '../core/store';
 import { gameView, type ThrowQuality } from '../engine/gameView';
@@ -19,6 +19,8 @@ import type { ChallengeDef } from '../meta/progression';
 import { currentLiveEvent, scoreEventMatch } from '../meta/liveEvents';
 import { addEventPoints } from '../meta/events';
 import { EMOTES } from '../meta/catalog';
+import { applyTournament, applyChallenge, applyTutorial, type PostMatch } from '../meta/postmatch';
+import type { Reward } from '../meta/chests';
 
 export type PlayerKind = 'human' | 'bot' | 'remote';
 
@@ -76,7 +78,9 @@ export interface MatchResult {
   xp: number;
   chest: ChestType | null;
   chestFull: boolean;
-  levelUps: number[];
+  levelUps: { level: number; reward: Reward }[];
+  /** torneo, desafío o tutorial: lo que se ganó (ya aplicado) */
+  post?: PostMatch;
   stats: { avg: number; darts: number; best: number; s180: number; checkout: number; tons: number }[];
   challengeScore?: number;
   stars?: number;
@@ -103,6 +107,12 @@ export interface MatchUI {
   lastTurn: { player: number; total: number; bust: boolean; key: number } | null;
   /** arena máxima desbloqueada antes de la partida (para detectar ascensos) */
   arenaBefore: number;
+  /** turnos seguidos de 100+ de cada jugador (racha) */
+  streak: number[];
+  /** conexión perdida: esperando a recuperarla (online) */
+  reconnecting: boolean;
+  /** diferencia de reloj con el servidor (ms) para la cuenta atrás */
+  clockOffset: number;
 }
 
 export const matchStore = new Store<MatchUI | null>(null);
@@ -141,11 +151,16 @@ export class Match {
       opponentConnected: true,
       lastTurn: null,
       arenaBefore: arenaForTrophies(profile().bestTrophies),
+      streak: setup.players.map(() => 0),
+      reconnecting: false,
+      clockOffset: 0,
     };
     matchStore.set(this.ui);
   }
 
   private emit() {
+    // una partida ya abandonada no debe tocar la pantalla de la siguiente
+    if (current !== this) return;
     matchStore.set({ ...this.ui });
   }
 
@@ -186,8 +201,10 @@ export class Match {
         else await this.remoteStep();
       } else if (pl.kind === 'human') await this.humanDart(cur);
       else await this.botDart(cur);
+      if (this.aborted) return;
       if (this.setup.dartLimit && this.ui.dartsUsed >= this.setup.dartLimit && this.ui.state.winner === null) {
         await sleep(700);
+        if (this.aborted) return;
         this.finish(0, 'limit');
         return;
       }
@@ -198,12 +215,15 @@ export class Match {
     const p = profile();
     const pl = this.setup.players[idx];
     const stats = dartStats(p);
+    this.view.setTurnCam(false);
+    this.view.fire = (this.ui.streak[idx] ?? 0) >= 2;
     this.ui.phase = 'aim';
     this.emit();
     this.view.onHint = (h) => {
       this.ui.hint = h;
       this.emit();
     };
+    this.showTarget();
     const shot = await this.view.humanAim({
       look: pl.dart,
       stats,
@@ -228,6 +248,7 @@ export class Match {
     if (this.setup.online) {
       net.send({ t: 'throw', x: hit.x, y: hit.y, bounce: !!hit.bounce });
       await this.view.throwDart({ x: hit.x, y: hit.y, look: pl.dart, bounce: hit.bounce, fromHand: true, cine });
+      if (this.aborted) return;
       this.onImpact(hit, idx);
       if (cine) this.endCine(hit);
       // el estado oficial llega del servidor
@@ -235,6 +256,7 @@ export class Match {
       return;
     }
     await this.view.throwDart({ x: hit.x, y: hit.y, look: pl.dart, bounce: hit.bounce, fromHand: true, cine });
+    if (this.aborted) return;
     this.onImpact(hit, idx);
     if (cine) this.endCine(hit);
     await this.applyLocal(hit, idx);
@@ -260,13 +282,20 @@ export class Match {
   private async botDart(idx: number) {
     const pl = this.setup.players[idx];
     const bot = pl.bot!;
-    await sleep(this.ui.state.turn.length === 0 ? 900 : 520 + this.r() * 380);
+    this.view.setTurnCam(true);
+    this.view.fire = (this.ui.streak[idx] ?? 0) >= 2;
+    await sleep(this.ui.state.turn.length === 0 ? 500 : 160 + this.r() * 220);
     if (this.aborted) return;
-    const { hit } = botThrow(this.ui.state, idx, bot.skill, this.r);
+    const { target, hit } = botThrow(this.ui.state, idx, bot.skill, this.r);
+    // se ve cómo apunta el rival antes de lanzar
+    const tp = targetPoint(target);
+    await this.view.botAim(tp.x, tp.y, 0.5 + this.r() * 0.3);
+    if (this.aborted) return;
     audio.whoosh();
     const cine = this.maxChance();
     if (cine) audio.tension();
     await this.view.throwDart({ x: hit.x, y: hit.y, look: pl.dart, bounce: hit.bounce, cine });
+    if (this.aborted) return;
     this.onImpact(hit, idx);
     if (cine) this.endCine(hit);
     await this.applyLocal(hit, idx);
@@ -278,8 +307,13 @@ export class Match {
     const r = Math.hypot(hit.x, hit.y);
     if (hit.bounce) audio.clank();
     else if (r > 330) audio.wallHit();
-    else audio.thud(1);
-    haptics.light();
+    else audio.thud(hit.ring === 'T' || hit.ring === 'DB' ? 1.15 : 1);
+    const mine = this.setup.online ? player === this.you : this.setup.players[player].kind === 'human';
+    if (mine) {
+      if (hit.ring === 'DB') haptics.heavy();
+      else if (hit.ring === 'T') haptics.medium();
+      else haptics.light();
+    }
     if (!hit.bounce) this.view.highlight(hit);
     const pos = this.view.toScreen(hit.x, hit.y);
     this.ui.popups = [...this.ui.popups.slice(-4), { id: uid++, x: pos.x, y: pos.y, label: hit.label, points: hit.points, ring: hit.ring }];
@@ -315,8 +349,10 @@ export class Match {
       audio.bust();
       if (human) haptics.error();
       this.ui.lastTurn = { player: idx, total: 0, bust: true, key: uid++ };
+      this.ui.streak[idx] = 0;
     } else if (event === 'turnEnd' || event === 'legWon' || event === 'matchWon') {
       this.ui.lastTurn = { player: idx, total: turnTotal, bust: false, key: uid++ };
+      const streak = (this.ui.streak[idx] = (cfg.mode === 'x01' || cfg.mode === 'free') && turnTotal >= 100 ? (this.ui.streak[idx] ?? 0) + 1 : 0);
       if (cfg.mode === 'x01' || cfg.mode === 'free') {
         if (turnTotal === 180) {
           this.say('gold', '¡180!', '¡MÁXIMO!');
@@ -330,7 +366,8 @@ export class Match {
           audio.callScore(turnTotal);
           this.view.celebrate(0.7);
         } else if (turnTotal >= 100) {
-          this.say('blue', String(turnTotal), '¡TON!');
+          this.say(streak >= 2 ? 'purple' : 'blue', String(turnTotal), streak >= 2 ? `🔥 ¡EN RACHA! x${streak}` : '¡TON!');
+          if (streak >= 2) haptics.medium();
           audio.cheer(0.5);
           audio.callScore(turnTotal);
           this.view.crowdFlash(0.4);
@@ -340,13 +377,19 @@ export class Match {
         if (human && this.setup.type !== 'tutorial') track({ type: 'turn', total: turnTotal });
       }
       if (event === 'legWon' || event === 'matchWon') {
-        const checkout = s.players[idx].checkoutBest;
-        this.say('green', event === 'matchWon' ? '¡GAME SHOT!' : '¡LEG!', `${this.setup.players[idx].name}${cfg.mode === 'x01' && checkout ? ' · cierre de ' + checkout : ''}`);
+        // al llegar al límite de rondas gana quien va mejor, no quien lanzó el último dardo
+        const w = s.legWinner ?? idx;
+        const closed = w === idx && (cfg.mode !== 'cricket' || s.players[w].marks.every((m) => m >= 3));
+        const checkout = cfg.mode === 'x01' && closed ? turnTotal : 0;
+        const title = event === 'matchWon' ? (closed ? '¡GAME SHOT!' : '¡FIN DE RONDAS!') : '¡LEG!';
+        this.say('green', title, `${this.setup.players[w].name}${checkout ? ' · cierre de ' + checkout : event === 'matchWon' && !closed ? ' gana la partida' : ''}`);
         audio.cheer(1.2);
         this.view.celebrate(1);
         if (event === 'matchWon') {
           await sleep(2300);
-          this.finish(idx, 'win');
+          if (this.aborted) return;
+          if (this.setup.online) return this.awaitRemoteEnd(s.winner ?? w);
+          this.finish(s.winner ?? w, 'win');
           return;
         }
       }
@@ -357,6 +400,7 @@ export class Match {
     await sleep(event === 'bust' ? 1300 : 1100);
     if (this.aborted) return;
     await this.view.clearDarts();
+    if (this.aborted) return;
     this.turnHits = [];
     this.ui.popups = [];
     this.ui.phase = 'wait';
@@ -366,6 +410,32 @@ export class Match {
   private say(kind: BigMessage['kind'], text: string, sub?: string) {
     this.ui.message = { id: uid++, text, sub, kind };
     this.emit();
+  }
+
+  /** Ilumina en la diana la zona a la que conviene tirar con el siguiente dardo. */
+  private showTarget() {
+    const s = this.ui.state;
+    if (!profile().settings.showCheckout) return this.view.setTarget(null);
+    const p = s.players[s.current];
+    const dartsLeft = 3 - s.turn.length;
+    switch (s.config.mode) {
+      case 'x01': {
+        const route = p.remaining <= 170 ? checkoutRoute(p.remaining, dartsLeft, s.config.doubleOut) : null;
+        if (route && s.turn.length === 0) audio.ready();
+        if (route) return this.view.setTarget(route[0], route.length === 1 ? 'finish' : 'route');
+        // sin cierre: sugerencia para dejar una buena salida (solo cuando ya se acerca el final)
+        if (p.remaining <= 200) return this.view.setTarget(suggestTarget(p.remaining, dartsLeft, s.config.doubleOut), 'score');
+        return this.view.setTarget(null);
+      }
+      case 'atc': {
+        const t = chooseTarget(s, s.current);
+        return this.view.setTarget(t, 'route', t !== 'DB');
+      }
+      case 'cricket':
+        return this.view.setTarget(chooseTarget(s, s.current), 'route');
+      default:
+        return this.view.setTarget(null);
+    }
   }
 
   private updateCheckout() {
@@ -408,12 +478,15 @@ export class Match {
   private listenOnline() {
     this.offs.push(
       net.on('state', (m) => {
+        if (m.serverNow) this.ui.clockOffset = m.serverNow - Date.now();
         this.remoteQueue.push(m);
         if (m.timeout && m.last?.player === this.you && this.view.isAiming) this.view.cancelAim();
         this.remoteWake?.();
       }),
       net.on('match_end', (m) => {
+        this.clearReconnect();
         this.remoteQueue.push(m);
+        if (this.view.isAiming) this.view.cancelAim();
         this.remoteWake?.();
       }),
       net.on('emote', (m) => {
@@ -427,10 +500,56 @@ export class Match {
         this.emit();
       }),
       net.on('close', () => {
-        this.remoteQueue.push({ t: 'match_end', winner: 1 - this.you, reason: 'disconnect', trophies: [0, 0] });
-        this.remoteWake?.();
+        // el servidor guarda la partida unos segundos: esperamos a reconectar antes de darla por perdida
+        if (this.ui.result || this.reconnectTimer) return;
+        this.ui.reconnecting = true;
+        if (this.view.isAiming) this.view.cancelAim();
+        this.emit();
+        this.reconnectTimer = setTimeout(() => {
+          this.reconnectTimer = null;
+          this.remoteQueue.push({ t: 'match_end', winner: 1 - this.you, reason: 'disconnect', trophies: [0, 0] });
+          this.remoteWake?.();
+        }, 32000);
       }),
     );
+  }
+
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private clearReconnect() {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    if (this.ui.reconnecting) {
+      this.ui.reconnecting = false;
+      this.emit();
+    }
+  }
+
+  /** Cuenta atrás del primer turno online (llega con el inicio de la partida). */
+  setDeadline(deadline: number, serverNow?: number) {
+    this.ui.deadline = deadline;
+    if (serverNow) this.ui.clockOffset = serverNow - Date.now();
+    this.emit();
+  }
+
+  /** El servidor nos reenvió la partida tras reconectar: retomamos su estado. */
+  resync(m: Extract<ServerMsg, { t: 'match_start' }>) {
+    this.clearReconnect();
+    if (this.view.isAiming) this.view.cancelAim();
+    if (m.serverNow) this.ui.clockOffset = m.serverNow - Date.now();
+    this.remoteQueue.push({ t: 'state', state: m.state, last: null, deadline: m.deadline ?? 0 });
+    this.remoteWake?.();
+  }
+
+  /** Online: el resultado (y las copas) los decide el servidor. */
+  private async awaitRemoteEnd(fallbackWinner: number) {
+    const timeout = sleep(6000).then(() => null);
+    for (;;) {
+      const m = await Promise.race([this.nextRemote().catch(() => null), timeout]);
+      if (this.aborted) return;
+      if (!m) return this.finish(fallbackWinner, 'win');
+      if (m.t === 'match_end') return this.handleRemoteEnd(m);
+    }
   }
 
   private async nextRemote(): Promise<ServerMsg> {
@@ -450,11 +569,13 @@ export class Match {
     this.ui.state = m.state;
     this.ui.deadline = m.deadline;
     if (m.last) await this.afterThrow(m.last.event, m.state.history.at(-1)?.total ?? 0, m.last.player);
+    else this.emit();
     void mine;
   }
 
   private async remoteStep() {
     this.ui.phase = 'wait';
+    if (this.ui.state.current !== this.you) this.view.setTurnCam(true);
     this.emit();
     const m = await this.nextRemote();
     if (m.t === 'match_end') return this.handleRemoteEnd(m);
@@ -470,6 +591,7 @@ export class Match {
       const pl = this.setup.players[m.last.player];
       audio.whoosh();
       await this.view.throwDart({ x: m.last.hit.x, y: m.last.hit.y, look: pl.dart, bounce: m.last.hit.bounce });
+      if (this.aborted) return;
       this.onImpact(m.last.hit, m.last.player);
       this.ui.state = m.state;
       await this.afterThrow(m.last.event, m.state.history.at(-1)?.total ?? 0, m.last.player);
@@ -491,7 +613,10 @@ export class Match {
     if (this.ui.phase === 'ended') return;
     const forfeit = this.setup.type === 'ranked' || this.setup.type === 'online' || this.setup.type === 'tournament';
     if (this.setup.online) net.send({ t: 'leave' });
-    if (forfeit && this.ui.state.winner === null) {
+    if (this.ui.state.winner !== null && !this.ui.result) {
+      // ya estaba decidida (p. ej. durante la celebración): se cierra con su resultado real
+      this.finish(this.ui.state.winner, 'win');
+    } else if (forfeit && this.ui.state.winner === null) {
       this.finish(this.setup.players.length > 1 ? 1 - this.you : 0, 'forfeit');
     } else {
       this.cleanup();
@@ -501,6 +626,10 @@ export class Match {
 
   private cleanup() {
     this.aborted = true;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.view.setTurnCam(false);
+    this.view.fire = false;
     this.view.cancelAim();
     this.remoteWake?.();
     for (const o of this.offs) o();
@@ -515,8 +644,9 @@ export class Match {
     const you = this.you;
     const setup = this.setup;
     const arena = ARENAS[setup.arena] ?? ARENAS[0];
+    const solo = setup.players.length === 1;
     const res: MatchResult = {
-      won: winner === you,
+      won: winner === you && reason !== 'limit',
       winner,
       reason,
       coins: 0,
@@ -558,7 +688,7 @@ export class Match {
     mutate((p) => {
       if (setup.type === 'tutorial') return;
       const avg = threeDartAvg(me);
-      if (setup.type !== 'challenge' && setup.type !== 'local') {
+      if (setup.type !== 'challenge' && setup.type !== 'local' && !solo) {
         p.stats.matches++;
         if (res.won) {
           p.stats.wins++;
@@ -605,7 +735,7 @@ export class Match {
         res.xp = 15;
         addSeasonXp(p, 15);
       }
-      if (res.xp) res.levelUps = addXp(p, res.xp).map((l) => l.level);
+      if (res.xp) res.levelUps = addXp(p, res.xp);
       p.history = [{ at: Date.now(), mode: setup.type, opponent: opp.name, won: res.won, avg: Math.round(avg * 10) / 10, online: !!setup.online }, ...p.history].slice(0, 30);
     });
 
@@ -613,8 +743,12 @@ export class Match {
       res.chest = awardWinChest(setup.arena);
       res.chestFull = res.chest === null;
     }
+    // progreso de torneo, desafío y tutorial: se guarda ya (no al pulsar «Continuar»)
+    if (setup.type === 'tournament') res.post = applyTournament(res.won);
+    else if (setup.type === 'challenge') res.post = applyChallenge(res.challengeScore ?? 0, res.stars ?? 0);
+    else if (setup.type === 'tutorial') res.post = applyTutorial();
     if (setup.type !== 'tutorial' && setup.type !== 'challenge') {
-      track({ type: 'match', won: res.won, online: setup.type === 'online', checkoutDouble: res.won && s.config.mode === 'x01' && s.config.doubleOut && reason === 'win', ranked: isRanked });
+      if (!solo) track({ type: 'match', won: res.won, online: setup.type === 'online', checkoutDouble: res.won && s.config.mode === 'x01' && s.config.doubleOut && reason === 'win', ranked: isRanked });
       if (setup.type === 'training' && reason !== 'forfeit') track({ type: 'training' });
       noteMatchForAds();
     } else if (setup.type === 'challenge') track({ type: 'training' });

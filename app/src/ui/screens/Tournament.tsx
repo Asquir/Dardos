@@ -9,9 +9,8 @@ import { humanPlayer, botPlayer, launch } from '../../game/launch';
 import type { MatchResult } from '../../game/match';
 import { go, toast } from '../state';
 import { audio } from '../../services/audio';
-import { claim } from '../rewards';
+import { showPost } from '../rewards';
 import { Back, Coin } from '../icons';
-import { confetti } from '../fx';
 
 const ROUND_NAMES = ['Cuartos de final', 'Semifinal', 'Gran Final'];
 
@@ -72,45 +71,9 @@ function playRound() {
 }
 
 export function tournamentAfterMatch(r: MatchResult) {
-  const t = profile().tournament;
   go('tournament');
-  if (!t) return;
-  const me = meIndex(t);
-  const alive = t.rounds[t.round];
-  const next: number[] = [];
-  for (let i = 0; i < alive.length; i += 2) {
-    const a = alive[i];
-    const b = alive[i + 1];
-    if (a === me || b === me) next.push(r.won ? me : a === me ? b : a);
-    else {
-      // partidos entre bots: gana más a menudo el de menor sigma
-      const sa = t.bracket[a].sigma;
-      const sb = t.bracket[b].sigma;
-      next.push(Math.random() < sb / (sa + sb) ? a : b);
-    }
-  }
-  const round = t.round + 1;
-  const champion = r.won && round === 3;
-  mutate((pp) => {
-    if (!pp.tournament) return;
-    pp.tournament.rounds.push(next);
-    pp.tournament.round = round;
-    pp.tournament.alive = r.won && round < 3;
-    pp.tournament.won = champion;
-    if (champion) pp.stats.tournamentsWon++;
-  });
-  if (champion) {
-    confetti(200);
-    audio.win();
-    claim({ coins: t.entry * 6, chest: 'gold' }, '¡CAMPEÓN DEL TORNEO!');
-  } else if (!r.won) {
-    const prize = t.round === 2 ? Math.round(t.entry * 2.5) : t.round === 1 ? t.entry : 0;
-    if (prize) claim({ coins: prize }, t.round === 2 ? '¡Subcampeón!' : 'Semifinalista');
-    else toast('Eliminado en cuartos. ¡La próxima vez!');
-  } else {
-    audio.levelUp();
-    toast(`¡Pasas a ${ROUND_NAMES[round]}!`, 'good');
-  }
+  showPost(r.post);
+  if (r.post?.good) audio.levelUp();
 }
 
 export function Tournament() {

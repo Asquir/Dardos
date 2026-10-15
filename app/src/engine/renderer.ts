@@ -300,7 +300,11 @@ class Engine {
 
   thumbnail(key: string, scene: THREE.Scene, camera: THREE.Camera, w = 160, h = 160): string {
     const hit = this.thumbCache.get(key);
-    if (hit) return hit;
+    if (hit) {
+      this.thumbCache.delete(key);
+      this.thumbCache.set(key, hit);
+      return hit;
+    }
     const t0 = performance.now();
     if (!this.thumbRenderer) {
       this.thumbRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true, powerPreference: 'low-power' });
@@ -318,6 +322,8 @@ class Engine {
     this.thumbRenderer.render(scene, camera);
     const url = this.thumbRenderer.domElement.toDataURL('image/png');
     this.thumbCache.set(key, url);
+    // límite de memoria (las miniaturas de avatar en el editor se generan a montones)
+    if (this.thumbCache.size > 320) this.thumbCache.delete(this.thumbCache.keys().next().value!);
     if (location.search.includes('debug')) console.info(`[arranque] miniatura ${key.slice(0, 20)}: ${Math.round(performance.now() - t0)} ms`);
     return url;
   }

@@ -435,6 +435,12 @@ class AudioEngine {
   }
 
   // ------------------------------------------------------------ interfaz y recompensas
+  /** Tienes cierre: dos notas ascendentes suaves. */
+  ready() {
+    this.bell(1568, 0.045, 0, this.uiBus, 0.6);
+    this.bell(2093, 0.05, 0.09, this.uiBus, 0.8);
+  }
+
   /** Aviso (banner): campanilla de dos notas. */
   notify() {
     this.bell(1318.5, 0.07, 0, this.uiBus, 1.1);

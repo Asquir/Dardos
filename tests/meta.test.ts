@@ -51,6 +51,7 @@ describe('notificaciones', () => {
   it('programa el cofre listo, el cofre gratis y los recordatorios', () => {
     const now = Date.now();
     const p = defaultProfile();
+    p.level = 5;
     p.chests[0] = { type: 'gold', arena: 1, readyAt: now + 3600_000 };
     p.chests[1] = { type: 'silver', arena: 1, readyAt: null };
     p.freeChestAt = now + 2 * 3600_000;
@@ -62,5 +63,8 @@ describe('notificaciones', () => {
     expect(ids).toContain(140);
     expect(plan.find((n) => n.id === 100)!.at).toBe(now + 3600_000);
     expect(plan.every((n) => n.at > now)).toBe(true);
+    // sin el nivel de los eventos no se avisa de ellos
+    p.level = 1;
+    expect(planNotifications(p, now, { at: now + 86400_000, name: 'Copa' }).map((n) => n.id)).not.toContain(140);
   });
 });

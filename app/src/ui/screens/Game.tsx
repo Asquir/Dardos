@@ -21,6 +21,9 @@ import { TutorialCoach, tutorialAfterMatch } from '../overlays/Tutorial';
 import { tournamentAfterMatch } from './Tournament';
 import { challengeAfterMatch } from './Events';
 import { EventResultPanel } from './LiveEvent';
+import { afterGrant } from '../rewards';
+import { rankedSetup, eventSetup, launch } from '../../game/launch';
+import type { MatchSetup } from '../../game/match';
 
 export function Game() {
   const m = useStore(matchStore);
@@ -40,6 +43,32 @@ export function Game() {
       {m.setup.type === 'tutorial' && m.phase !== 'ended' && <TutorialCoach m={m} />}
       {m.phase === 'ended' && m.result && <Results m={m} />}
     </div>
+  );
+}
+
+/** Número que se anima al cambiar (cuenta hacia abajo/arriba). */
+function ScoreNum({ value }: { value: string }) {
+  const [shown, setShown] = useState(value);
+  const prev = useRef(value);
+  useEffect(() => {
+    const a = Number(prev.current);
+    const b = Number(value);
+    prev.current = value;
+    if (!Number.isFinite(a) || !Number.isFinite(b) || a === b) return setShown(value);
+    let raf = 0;
+    const t0 = performance.now();
+    const step = (t: number) => {
+      const k = Math.min(1, (t - t0) / 480);
+      setShown(String(Math.round(a + (b - a) * (1 - Math.pow(1 - k, 3)))));
+      if (k < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [value]);
+  return (
+    <span key={value} class="score-num">
+      {shown}
+    </span>
   );
 }
 
@@ -65,14 +94,23 @@ function Hud({ m }: { m: MatchUI }) {
   const pls = m.setup.players;
   const turnHits = s.turn;
   const turnSum = turnHits.reduce((a, h) => a + h.points, 0);
-  const [banner, setBanner] = useState<{ key: number; text: string } | null>(null);
+  const [banner, setBanner] = useState<{ key: number; text: string; sub?: string } | null>(null);
   const lastCur = useRef(-1);
   useEffect(() => {
     if (pls.length < 2 || lastCur.current === cur) return;
     lastCur.current = cur;
-    const mine = cur === you && pls[cur].kind !== 'bot';
-    setBanner({ key: Date.now(), text: mine ? (pls.filter((x) => x.kind === 'human').length > 1 ? `Turno de ${pls[cur].name}` : '¡Tu turno!') : `Turno de ${pls[cur].name}` });
+    const mine = (cur === you || pls[cur].kind === 'human') && pls[cur].kind !== 'bot' && pls[cur].kind !== 'remote';
+    const who = mine ? (pls.filter((x) => x.kind === 'human').length > 1 ? `Turno de ${pls[cur].name}` : '¡Tu turno!') : `Turno de ${pls[cur].name}`;
+    setBanner({ key: Date.now(), text: who, sub: mine && m.checkout ? `🎯 ¡Puedes cerrar! ${m.checkout}` : undefined });
   }, [cur]);
+  // sacudida de la tarjeta al pasarse
+  const [bustP, setBustP] = useState(-1);
+  useEffect(() => {
+    if (!m.lastTurn?.bust) return;
+    setBustP(m.lastTurn.player);
+    const t = setTimeout(() => setBustP(-1), 750);
+    return () => clearTimeout(t);
+  }, [m.lastTurn?.key]);
   const showHint = m.phase === 'aim' && m.setup.type !== 'tutorial' && (m.hint === 'flick' || profile().stats.darts < 12);
   const legsToWin = s.config.legsToWin;
   const emote = m.emote;
@@ -82,7 +120,7 @@ function Hud({ m }: { m: MatchUI }) {
     const id = setInterval(() => setNow(Date.now()), 250);
     return () => clearInterval(id);
   }, [m.deadline]);
-  const timeLeft = m.deadline ? Math.max(0, Math.ceil((m.deadline - now) / 1000)) : 0;
+  const timeLeft = m.deadline ? Math.max(0, Math.ceil((m.deadline - (now + (m.clockOffset ?? 0))) / 1000)) : 0;
 
   return (
     <>
@@ -90,13 +128,16 @@ function Hud({ m }: { m: MatchUI }) {
         {pls.map((pl, i) => (
           <>
             {i === 1 && <div class="vs-mini">VS</div>}
-            <div key={i} class={'pcard' + (i === cur ? ' on' : '') + (i === 1 ? ' right' : '')} style={pls.length > 2 ? { padding: '4px' } : undefined}>
+            <div key={i} class={'pcard' + (i === cur ? ' on' : '') + (i === 1 ? ' right' : '') + ((m.streak?.[i] ?? 0) >= 2 ? ' fire' : '') + (bustP === i ? ' bust' : '')} style={pls.length > 2 ? { padding: '4px' } : undefined}>
+              {(m.streak?.[i] ?? 0) >= 2 && <span class="fire-badge">🔥{m.streak[i]}</span>}
               <div class="av">
                 <AvatarImg cfg={pl.avatar} size={88} />
               </div>
               <div style={{ minWidth: 0, flex: 1 }}>
                 <div class="name">{pl.name}</div>
-                <div class="score outline">{scoreText(m, i)}</div>
+                <div class="score outline">
+                  <ScoreNum value={scoreText(m, i)} />
+                </div>
                 <div class="meta">
                   {s.config.mode === 'atc' ? `${s.players[i].darts} dardos` : `Media ${threeDartAvg(s.players[i]).toFixed(1)}`}
                   {m.setup.dartLimit && i === 0 ? ` · ${m.setup.dartLimit - m.dartsUsed} restantes` : ''}
@@ -130,6 +171,7 @@ function Hud({ m }: { m: MatchUI }) {
       {m.checkout && s.config.mode === 'x01' && (pls[cur].kind === 'human' || cur === you) && <div class="checkout-pill">🎯 {m.checkout}</div>}
       {m.deadline > 0 && cur === you && <div class={'timer-ring' + (timeLeft <= 5 ? ' low' : '')}>⏱ {timeLeft}s</div>}
       {!m.opponentConnected && <div class="checkout-pill" style={{ top: 'calc(var(--safe-top) + 150px)', background: 'rgba(200,30,60,.9)' }}>Rival desconectado...</div>}
+      {m.reconnecting && <div class="checkout-pill" style={{ top: 'calc(var(--safe-top) + 186px)', background: 'rgba(200,120,20,.92)' }}>📶 Reconectando… no cierres la app</div>}
 
       {m.popups.map((pp) => (
         <div key={pp.id} class={'popup ' + pp.ring} style={{ left: pp.x + 'px', top: pp.y - 16 + 'px' }}>
@@ -150,8 +192,9 @@ function Hud({ m }: { m: MatchUI }) {
         </div>
       )}
       {banner && m.phase !== 'between' && (
-        <div key={banner.key} class="turn-banner">
+        <div key={banner.key} class={'turn-banner' + (banner.sub ? ' finish' : '')}>
           <div class="outline">{banner.text}</div>
+          {banner.sub && <div class="sub">{banner.sub}</div>}
         </div>
       )}
       {showHint && (
@@ -187,6 +230,29 @@ function ConfettiOnce({ k }: { k: number }) {
 function CricketBoard({ m }: { m: MatchUI }) {
   const s = m.state;
   const mk = (n: number) => (n >= 3 ? 'Ⓧ' : n === 2 ? 'X' : n === 1 ? '/' : '');
+  if (s.players.length > 2) {
+    // 3 o 4 jugadores: número + una columna por jugador
+    return (
+      <div class="cricket-board" style={{ gridTemplateColumns: `30px repeat(${s.players.length}, 28px)` }}>
+        <div />
+        {s.players.map((_, k) => (
+          <div key={'h' + k} class={'ph' + (k === s.current ? ' on' : '')}>
+            J{k + 1}
+          </div>
+        ))}
+        {CRICKET_NUMS.map((num, i) => (
+          <>
+            <div class="n">{num === 25 ? 'B' : num}</div>
+            {s.players.map((pp, k) => (
+              <div key={k} class={pp.marks[i] >= 3 ? 'closed' : ''}>
+                {mk(pp.marks[i])}
+              </div>
+            ))}
+          </>
+        ))}
+      </div>
+    );
+  }
   return (
     <div class="cricket-board">
       {CRICKET_NUMS.map((num, i) => (
@@ -288,10 +354,38 @@ function Results({ m }: { m: MatchUI }) {
     toast(`+${setup.entry} monedas recuperadas`, 'good');
   };
 
+  // ventanas de subida de nivel tras salir de los resultados
+  const showLevelUps = () => setTimeout(() => afterGrant(r.levelUps), 350);
+
+  const arenaUp = isRanked && arenaForTrophies(profile().bestTrophies) > m.arenaBefore;
+  const canRematch = !setup.online && !arenaUp && (setup.type === 'ranked' || setup.type === 'training' || setup.type === 'local' || setup.type === 'event');
+  const rematch = async () => {
+    audio.click();
+    let next: MatchSetup | null;
+    if (setup.type === 'ranked') {
+      next = rankedSetup(setup.arena);
+      if (!next) return toast(`Necesitas ${fmtNum(ARENAS[setup.arena].entry)} monedas para la entrada`, 'bad');
+    } else if (setup.type === 'event') {
+      next = eventSetup();
+      if (!next) return toast('Sin entradas: se recargan solas o consíguelas en el evento', 'bad');
+    } else {
+      // misma partida, empieza el otro
+      next = { ...setup, starter: setup.players.length > 1 ? (setup.starter + 1) % setup.players.length : 0 };
+    }
+    if (shouldShowInterstitial()) {
+      noteInterstitialShown();
+      await ads.interstitial();
+    }
+    closeMatch();
+    launch(next);
+    showLevelUps();
+  };
+
   const cont = async () => {
     audio.click();
     const prevArena = m.arenaBefore;
     closeMatch();
+    if (r.levelUps.length) showLevelUps();
     if (setup.type === 'tutorial') return tutorialAfterMatch(r);
     if (setup.type === 'tournament') return tournamentAfterMatch(r);
     if (setup.type === 'challenge') return challengeAfterMatch(r);
@@ -343,7 +437,22 @@ function Results({ m }: { m: MatchUI }) {
         </div>
       )}
 
-      {!solo && (
+      {pls.length > 2 && (
+        <div class="ranking">
+          {pls
+            .map((pl, i) => ({ pl, i, st: m.state.players[i] }))
+            .sort((a, b) => (a.i === r.winner ? -1 : b.i === r.winner ? 1 : m.state.config.mode === 'x01' ? a.st.remaining - b.st.remaining : b.st.points + b.st.scored - (a.st.points + a.st.scored)))
+            .map(({ pl, i, st }, pos) => (
+              <div key={i} class={'rank-row' + (i === r.winner ? ' winner' : '')} style={{ animationDelay: pos * 0.1 + 's' }}>
+                <span class="pos">{pos === 0 ? '🏆' : pos + 1}</span>
+                <AvatarImg cfg={pl.avatar} size={64} />
+                <span class="nm">{pl.name}</span>
+                <span class="sc">{m.state.config.mode === 'x01' ? `quedan ${st.remaining}` : m.state.config.mode === 'cricket' ? `${st.points} pts` : `${st.scored}`}</span>
+              </div>
+            ))}
+        </div>
+      )}
+      {!solo && pls.length === 2 && (
         <div class="versus">
           <div class={'side' + (r.winner === 0 ? ' winner' : '')}>
             <AvatarImg cfg={pls[0].avatar} size={130} h={210} frame="full" pose={r.winner === 0 ? 'cheer' : 'sad'} />
@@ -439,9 +548,25 @@ function Results({ m }: { m: MatchUI }) {
             <AdIco class="ico" /> Recupera tu entrada ({fmtNum(setup.entry ?? 0)})
           </button>
         )}
-        <button class="btn block big" onClick={cont}>
-          Continuar
-        </button>
+        {canRematch ? (
+          <div class="row" style={{ width: '100%' }}>
+            <button class="btn big blue grow" onClick={rematch}>
+              {setup.type === 'event' ? '🎟️ Otra' : setup.type === 'ranked' ? '⚔️ Revancha' : '🔁 Otra vez'}
+              {setup.type === 'ranked' && (
+                <span class="sub">
+                  <Coin class="ico" /> {fmtNum(setup.entry ?? 0)}
+                </span>
+              )}
+            </button>
+            <button class="btn big grow" onClick={cont}>
+              Continuar
+            </button>
+          </div>
+        ) : (
+          <button class="btn block big" onClick={cont}>
+            Continuar
+          </button>
+        )}
         {setup.type === 'ranked' && (
           <div class="muted" style={{ textAlign: 'center', fontSize: '11px', fontWeight: 700 }}>
             {ARENAS[setup.arena].name}

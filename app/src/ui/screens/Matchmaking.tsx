@@ -29,7 +29,11 @@ export function Matchmaking() {
       setElapsed(Math.floor((Date.now() - t0) / 1000));
       setDots((d) => (d + 1) % 4);
     }, 500);
-    const offStart = net.on('match_start', (m) => startOnline(m, arenaId));
+    let started = false;
+    const offStart = net.on('match_start', (m) => {
+      started = true;
+      startOnline(m, arenaId);
+    });
     const offRoom = net.on('room_created', (m) => setCode(m.code));
     const offErr = net.on('error', (m) => {
       toast(m.msg, 'bad');
@@ -44,6 +48,8 @@ export function Matchmaking() {
       offStart();
       offRoom();
       offErr();
+      // salir de la búsqueda por cualquier vía (atrás de Android, menú…) cancela la cola en el servidor
+      if (!started) net.send({ t: 'cancel_queue' });
     };
   }, []);
 

@@ -2,14 +2,17 @@
 // vuelo de los dardos, impactos, efectos y el modo "menú" (fondo animado).
 
 import * as THREE from 'three';
-import { BOARD, SEGMENTS, type Hit } from '@shared/board';
+import { BOARD, SEGMENTS, scoreAt, targetPoint as targetPointOf, type Hit, type Target } from '@shared/board';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { haptics } from '../services/haptics';
+import { audio } from '../services/audio';
 import type { DartLook } from '@shared/protocol';
 import { gaussian } from '@shared/bot';
 import { engine, type View, type Grade } from './renderer';
 import { buildBoard, buildReticle, BOARD_HEIGHT, THROW_DISTANCE, type BoardModel, type Reticle } from './board';
 import { ARENA_THEMES, buildEnvironment, type Environment } from './environment';
 import { buildDart, type DartModel } from './dart';
-import { glowTexture, type BoardStyle } from './textures';
+import { glowTexture, makeCanvas, toTexture, type BoardStyle } from './textures';
 
 const MM = 0.001;
 /** los dardos se ven un poco más grandes que en la realidad para que luzcan en el móvil */
@@ -111,6 +114,62 @@ const ARENA_GRADES: Partial<Grade>[] = [
   { saturation: 1.14, contrast: 1.08, shadows: [0.006, -0.008, 0.036], highlights: [0.02, 0.012, 0.016], vignette: 0.52 },
 ];
 
+const DEG = Math.PI / 180;
+function sector(r0: number, r1: number, num: number, pad = 0): THREE.BufferGeometry {
+  const i = SEGMENTS.indexOf(num as (typeof SEGMENTS)[number]);
+  const c = 90 - i * 18;
+  const pa = pad / ((r0 + r1) / 2);
+  return new THREE.RingGeometry(Math.max(0.1, r0 - pad) * MM, (r1 + pad) * MM, 12, 1, (c - 9) * DEG - pa, 18 * DEG + pa * 2);
+}
+
+/** Geometría de la zona de la diana de un objetivo ("T20", "D16", "S5", "SB", "DB"); `wedge` = el número entero; `pad` = margen en mm. */
+export function targetGeometry(t: Target, wedge = false, pad = 0): THREE.BufferGeometry {
+  if (t === 'DB') return new THREE.CircleGeometry((BOARD.bull + pad) * MM, 40);
+  if (t === 'SB') return new THREE.RingGeometry(Math.max(0.1, BOARD.bull - pad) * MM, (BOARD.outerBull + pad) * MM, 48);
+  const num = parseInt(t.slice(1), 10);
+  if (wedge) return sector(BOARD.outerBull, BOARD.doubleOut, num, pad);
+  if (t[0] === 'T') return sector(BOARD.trebleIn, BOARD.trebleOut, num, pad);
+  if (t[0] === 'D') return sector(BOARD.doubleIn, BOARD.doubleOut, num, pad);
+  return mergeGeometries([sector(BOARD.outerBull, BOARD.trebleIn, num, pad), sector(BOARD.trebleOut, BOARD.doubleIn, num, pad)])!;
+}
+
+export function targetLabel(t: Target): string {
+  return t === 'DB' ? 'BULL' : t === 'SB' ? '25' : t[0] === 'S' ? t.slice(1) : t;
+}
+
+const labelCache = new Map<string, THREE.Texture>();
+/** Etiqueta tipo "chapa" con texto (se cachea por texto y color). */
+function pillTexture(text: string, sub: string, color: string): THREE.Texture {
+  const key = text + '|' + sub + '|' + color;
+  let t = labelCache.get(key);
+  if (t) return t;
+  const [c, ctx] = makeCanvas(256, 128);
+  const w = 236;
+  const h = sub ? 108 : 78;
+  const x = (256 - w) / 2;
+  const y = (128 - h) / 2;
+  ctx.fillStyle = 'rgba(8,10,28,0.88)';
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, 26);
+  ctx.fill();
+  ctx.lineWidth = 6;
+  ctx.strokeStyle = color;
+  ctx.stroke();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '54px "Lilita One", "Arial Black", sans-serif';
+  ctx.fillText(text, 128, sub ? 52 : 66);
+  if (sub) {
+    ctx.fillStyle = color;
+    ctx.font = '900 26px "Nunito", sans-serif';
+    ctx.fillText(sub, 128, 94);
+  }
+  t = toTexture(c);
+  labelCache.set(key, t);
+  return t;
+}
+
 /** inclina un poco hacia fuera los dardos de los lados (más natural) */
 const opts_side = (x: number) => Math.max(-1, Math.min(1, x / 0.17));
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -146,6 +205,23 @@ export class GameView implements View {
   private sparkList: Spark[] = [];
   private sparkFree: number[] = [];
   private waves: Wave[] = [];
+  // zona objetivo iluminada y etiqueta de la mira
+  private targetGlow: { group: THREE.Group; fill: THREE.MeshBasicMaterial; edge: THREE.MeshBasicMaterial; pin: THREE.Sprite; t: number; key: string } | null = null;
+  private aimLabel: THREE.Sprite;
+  private aimLabelText = '';
+  private lastTick = 0;
+  // mira del rival (se ve cómo apunta antes de lanzar)
+  private ghost: Reticle;
+  private ghostAnim: { from: THREE.Vector2; to: THREE.Vector2; t: number; dur: number; resolve: () => void } | null = null;
+  // cámara de televisión durante el turno del rival
+  private turnCam = 0;
+  private turnCamTarget = 0;
+  /** racha: estelas de fuego y más chispas */
+  fire = false;
+  /** lanzamientos de exhibición en el fondo del menú */
+  attract = false;
+  private attractT = 4;
+  private menuLook: DartLook = { barrel: 'b_t90', shaft: 's_alu_red', flight: 'f_flames' };
   // cámara lenta del posible 180
   private cine: { model: DartModel; target: THREE.Vector3; w: number; hold: number; active: boolean } | null = null;
 
@@ -183,6 +259,8 @@ export class GameView implements View {
     this.scene.add(this.board.group);
     this.reticle = buildReticle();
     this.board.group.add(this.reticle.mesh);
+    this.ghost = buildReticle();
+    this.board.group.add(this.ghost.mesh);
     this.scene.add(this.camera);
 
     // polvo de sisal al impactar
@@ -209,6 +287,61 @@ export class GameView implements View {
     this.sparks.renderOrder = 6;
     this.scene.add(this.sparks);
     for (let i = SPARK_N - 1; i >= 0; i--) this.sparkFree.push(i);
+
+    this.aimLabel = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthWrite: false, depthTest: false, toneMapped: false }));
+    this.aimLabel.scale.set(0.05, 0.025, 1);
+    this.aimLabel.visible = false;
+    this.aimLabel.renderOrder = 12;
+    this.scene.add(this.aimLabel);
+  }
+
+  /**
+   * Ilumina en la diana la zona a la que conviene tirar.
+   * `kind`: 'finish' = ese dardo cierra, 'route' = parte de la ruta de cierre, 'score' = sugerencia para sumar.
+   */
+  setTarget(t: Target | null, kind: 'finish' | 'route' | 'score' = 'score', wedge = false) {
+    const key = t ? `${t}|${kind}|${wedge}` : '';
+    if (this.targetGlow?.key === key) return;
+    if (this.targetGlow) {
+      const g = this.targetGlow.group;
+      g.removeFromParent();
+      g.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (m.geometry) m.geometry.dispose();
+      });
+      this.targetGlow.fill.dispose();
+      this.targetGlow.edge.dispose();
+      this.targetGlow.pin.removeFromParent();
+      (this.targetGlow.pin.material as THREE.SpriteMaterial).dispose();
+      this.targetGlow = null;
+    }
+    if (!t) return;
+    const color = kind === 'finish' ? '#3dff8a' : kind === 'route' ? '#ffd23a' : '#5fd0ff';
+    const group = new THREE.Group();
+    // borde luminoso (zona algo más grande, detrás) + relleno claro encima
+    const edge = new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(1.8), transparent: true, opacity: 0.9, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
+    const halo = new THREE.Mesh(targetGeometry(t, wedge, 2.2), edge);
+    halo.renderOrder = 8;
+    const fill = new THREE.MeshBasicMaterial({ color: new THREE.Color(color).lerp(new THREE.Color('#ffffff'), 0.45), transparent: true, opacity: 0.55, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
+    const mesh = new THREE.Mesh(targetGeometry(t, wedge), fill);
+    mesh.position.z = 0.0002;
+    mesh.renderOrder = 9;
+    group.add(halo, mesh);
+    group.position.z = 0.0013;
+    this.board.group.add(group);
+    // chapa con el nombre del objetivo, fuera de la diana
+    const num = t === 'DB' || t === 'SB' ? 20 : parseInt(t.slice(1), 10);
+    const i = SEGMENTS.indexOf(num as (typeof SEGMENTS)[number]);
+    const ang = (90 - i * 18) * DEG;
+    const r = t === 'DB' || t === 'SB' ? 0 : 252;
+    const sub = kind === 'finish' ? '¡CIERRA!' : kind === 'route' ? 'CIERRE' : '';
+    const pin = new THREE.Sprite(new THREE.SpriteMaterial({ map: pillTexture(targetLabel(t), sub, color), transparent: true, depthWrite: false, toneMapped: false }));
+    const pp = r ? this.boardPoint(Math.cos(ang) * r, Math.sin(ang) * r, 0.01) : this.boardPoint(0, 252, 0.01);
+    pin.position.copy(pp);
+    pin.scale.set(0.09, 0.045, 1);
+    pin.renderOrder = 11;
+    this.scene.add(pin);
+    this.targetGlow = { group, fill, edge, pin, t: 0, key };
   }
 
   setBoardStyle(style: BoardStyle) {
@@ -263,6 +396,7 @@ export class GameView implements View {
   }
 
   setDecorLook(look: DartLook) {
+    this.menuLook = look;
     if (this.mode !== 'menu') return;
     const spots = [
       [-6, 102],
@@ -400,6 +534,12 @@ export class GameView implements View {
     this.trails = [];
     this.cine = null;
     engine.timeScale = 1;
+    this.setTarget(null);
+    this.ghostAnim?.resolve();
+    this.ghostAnim = null;
+    this.ghost.visible(false);
+    this.turnCamTarget = 0;
+    this.fire = false;
   }
 
   // ------------------------------------------------------------------ estelas, chispas y ondas
@@ -427,7 +567,7 @@ export class GameView implements View {
       [/green|cricket|toxic/, '#7dff9a'],
       [/purple|galaxy|cosmic/, '#c08aff'],
     ];
-    const hex = hues.find(([re]) => re.test(flightId))?.[1] ?? '#cfe4ff';
+    const hex = this.fire ? '#ff6a1a' : hues.find(([re]) => re.test(flightId))?.[1] ?? '#cfe4ff';
     const tr: Trail = { mesh, pts: [], dead: false, color: new THREE.Color(hex) };
     this.trails.push(tr);
     return tr;
@@ -447,10 +587,10 @@ export class GameView implements View {
       const view = camDir.clone().sub(p);
       const side = seg.cross(view).normalize();
       const k = n > 1 ? i / (n - 1) : 1; // 0 = cola más antigua
-      const w = 0.0035 * (0.25 + 0.75 * k) * DART_SCALE;
+      const w = (this.fire ? 0.006 : 0.0035) * (0.25 + 0.75 * k) * DART_SCALE;
       pos.setXYZ(i * 2, p.x + side.x * w, p.y + side.y * w, p.z + side.z * w);
       pos.setXYZ(i * 2 + 1, p.x - side.x * w, p.y - side.y * w, p.z - side.z * w);
-      const a = Math.pow(k, 1.6) * 0.55;
+      const a = Math.pow(k, 1.6) * (this.fire ? 0.85 : 0.55);
       col.setXYZW(i * 2, tr.color.r, tr.color.g, tr.color.b, a);
       col.setXYZW(i * 2 + 1, tr.color.r, tr.color.g, tr.color.b, a);
     }
@@ -466,6 +606,10 @@ export class GameView implements View {
   }
 
   private sparkBurst(p: THREE.Vector3, n: number, color: string, speed = 1) {
+    if (this.fire) {
+      n = Math.round(n * 1.6);
+      color = '#ff8a2a';
+    }
     const c = new THREE.Color(color);
     const pos = this.sparks.geometry.attributes.position as THREE.BufferAttribute;
     for (let k = 0; k < n && this.sparkFree.length; k++) {
@@ -491,6 +635,23 @@ export class GameView implements View {
     mesh.renderOrder = 6;
     this.scene.add(mesh);
     this.waves.push({ mesh, t: 0, dur, size });
+  }
+
+  /** Muestra cómo apunta el rival: su mira se desplaza hasta el objetivo y se asienta. */
+  botAim(x: number, y: number, dur = 0.65): Promise<void> {
+    return new Promise((resolve) => {
+      if (engine.quality === 'low') return resolve();
+      const a = Math.random() * Math.PI * 2;
+      const d = 40 + Math.random() * 50;
+      this.ghostAnim?.resolve();
+      this.ghostAnim = { from: new THREE.Vector2(x + Math.cos(a) * d, y + Math.sin(a) * d), to: new THREE.Vector2(x, y), t: 0, dur, resolve };
+      this.ghost.visible(true);
+    });
+  }
+
+  /** Cámara algo ladeada (estilo retransmisión) durante el turno del rival. */
+  setTurnCam(opponent: boolean) {
+    this.turnCamTarget = opponent ? 1 : 0;
   }
 
   /** Termina la cámara lenta (tras el tercer dardo del posible 180). */
@@ -625,6 +786,8 @@ export class GameView implements View {
     this.dragging = false;
     this.zoomTarget = 1;
     this.reticle.visible(false);
+    this.aimLabel.visible = false;
+    this.setTarget(null);
     if (this.held) {
       this.held.dispose();
       this.held = null;
@@ -756,6 +919,8 @@ export class GameView implements View {
     const res = this.aimResolve!;
     this.aimResolve = null;
     this.reticle.visible(false);
+    this.aimLabel.visible = false;
+    this.setTarget(null);
     this.zoomTarget = 1;
     res({ x, y, quality });
   }
@@ -783,6 +948,15 @@ export class GameView implements View {
       // respiración sutil
       pos.y += Math.sin(t * 0.9) * 0.002;
       pos.x += Math.sin(t * 0.6) * 0.002;
+      // cámara de retransmisión en el turno del rival
+      this.turnCam = lerp(this.turnCam, this.turnCamTarget, 1 - Math.exp(-dt * 2.5));
+      if (this.turnCam > 0.001) {
+        const k = ease(this.turnCam);
+        pos.x += 0.38 * k + Math.sin(t * 0.25) * 0.03 * k;
+        pos.y += 0.12 * k;
+        pos.z -= 0.35 * k;
+        look.y += 0.02 * k;
+      }
       if (this.aimResolve && this.zoom > 1.01) {
         const k = (this.zoom - 1) / 0.32;
         look.x = lerp(look.x, this.aim.x * MM, 0.55 * k);
@@ -850,12 +1024,31 @@ export class GameView implements View {
       const ax = this.aim.x + sway.x;
       const ay = this.aim.y + sway.y;
       this.reticle.set(ax, ay, sig * 2, this.focus);
+      // etiqueta del segmento al que apuntas (y un toque al cambiar de zona)
+      const under = scoreAt(this.aim.x, this.aim.y);
+      const lbl = under.ring === 'MISS' ? 'FUERA' : under.label;
+      if (lbl !== this.aimLabelText) {
+        this.aimLabelText = lbl;
+        const col = under.ring === 'T' || under.ring === 'DB' ? '#ffd23a' : under.ring === 'D' ? '#3dff8a' : under.ring === 'MISS' ? '#ff4d6d' : '#cfe4ff';
+        this.aimLabel.material.map = pillTexture(lbl, '', col);
+        this.aimLabel.material.needsUpdate = true;
+        if (this.dragging && performance.now() - this.lastTick > 70) {
+          this.lastTick = performance.now();
+          haptics.light();
+        }
+      }
+      this.aimLabel.visible = this.dragging;
+      this.aimLabel.position.copy(this.boardPoint(ax, ay + Math.max(26, sig * 2.4 + 14), 0.012));
+      const ls = 0.05 / this.zoom;
+      this.aimLabel.scale.set(ls * 2, ls, 1);
       const side = this.aimOpts.leftHanded ? -1 : 1;
       this.heldPull = lerp(this.heldPull, 0, 1 - Math.exp(-dt * 10));
       const local = new THREE.Vector3(side * 0.018, -0.19 - this.heldPull * 0.02, -1.15 + this.heldPull * 0.08);
-      // el dardo sigue ligeramente al dedo
-      local.x += (this.aim.x * MM) * 0.25;
-      local.y += ((this.aim.y - 100) * MM) * 0.12;
+      // el dardo sigue ligeramente al dedo y se mece con la respiración
+      local.x += (this.aim.x * MM) * 0.25 + Math.sin(t * 1.7) * 0.0012;
+      local.y += ((this.aim.y - 100) * MM) * 0.12 + Math.sin(t * 2.3) * 0.0016 * (1 - this.focus * 0.7);
+      // al concentrarse, el dardo se echa un poco atrás (carga)
+      local.z += this.focus * 0.012;
       const world = local.applyMatrix4(cam.matrixWorld);
       this.held.group.position.copy(world);
       const target = this.boardPoint(ax, ay + 40);
@@ -918,6 +1111,59 @@ export class GameView implements View {
         }
         f.resolve();
       }
+    }
+
+    // mira del rival
+    if (this.ghostAnim) {
+      const g = this.ghostAnim;
+      g.t += dt / g.dur;
+      const k = Math.min(1, g.t);
+      const e = 1 - Math.pow(1 - k, 3);
+      const jit = (1 - k) * 6;
+      const gx = lerp(g.from.x, g.to.x, e) + Math.sin(t * 13) * jit;
+      const gy = lerp(g.from.y, g.to.y, e) + Math.cos(t * 11) * jit;
+      this.ghost.set(gx, gy, lerp(26, 9, e), e);
+      if (k >= 1) {
+        this.ghostAnim = null;
+        this.ghost.visible(false);
+        g.resolve();
+      }
+    }
+
+    // lanzamientos de exhibición en el menú
+    if (this.mode === 'menu' && this.attract && engine.quality !== 'low') {
+      this.attractT -= dt;
+      if (this.attractT <= 0) {
+        this.attractT = 7 + Math.random() * 6;
+        const targets = ['T20', 'T20', 'T19', 'DB', 'T18', 'D16', 'SB'];
+        const tp = targetPointOf(targets[Math.floor(Math.random() * targets.length)]);
+        const x = tp.x + (Math.random() - 0.5) * 6;
+        const y = tp.y + (Math.random() - 0.5) * 6;
+        const hit = scoreAt(x, y);
+        void this.throwDart({ x, y, look: this.menuLook, speed: 0.9 }).then(() => {
+          if (this.mode !== 'menu') return;
+          audio.thud(0.3);
+          this.highlight(hit);
+          // como mucho 3 dardos de exhibición clavados
+          while (this.stuck.length > 3) {
+            const old = this.stuck.shift()!;
+            this.leaving.push({ model: old.model, from: old.model.group.position.clone(), to: old.model.group.position.clone().add(new THREE.Vector3(0.05, -0.4, 0.6)), t: 0, delay: 0 });
+          }
+        });
+      }
+    }
+
+    // zona objetivo: late suavemente
+    if (this.targetGlow) {
+      const tg = this.targetGlow;
+      tg.t += dt;
+      const pulse = 0.5 + 0.5 * Math.sin(tg.t * 4.2);
+      tg.fill.opacity = 0.38 + pulse * 0.4;
+      tg.edge.opacity = 0.7 + pulse * 0.3;
+      tg.group.visible = this.mode === 'game';
+      tg.pin.visible = this.mode === 'game';
+      const ps = (0.09 * (1 + pulse * 0.06)) / Math.max(1, this.zoom * 0.85);
+      tg.pin.scale.set(ps, ps / 2, 1);
     }
 
     // estelas

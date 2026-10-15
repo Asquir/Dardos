@@ -12,7 +12,8 @@ import { cleanName } from '@shared/text';
 export function Onboarding() {
   const [name, setName] = useState(profile().name);
   const [seed, setSeed] = useState(Math.floor(Math.random() * 1000));
-  const options = [0, 1, 2].map((i) => randomAvatar(seed * 3 + i));
+  // si repites el tutorial, la primera opción es tu personaje actual (no se pierde)
+  const options = [0, 1, 2].map((i) => (i === 0 && profile().nameSet ? profile().avatar : randomAvatar(seed * 3 + i)));
   const [pick, setPick] = useState(0);
   const start = (skip = false) => {
     audio.unlock();

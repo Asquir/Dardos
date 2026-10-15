@@ -61,12 +61,16 @@ class Net {
     }
     this.ws = ws;
     ws.onopen = () => {
+      if (this.ws !== ws) return ws.close();
       this.retry = 0;
       const p = profile();
       this.send({ t: 'hello', id: p.serverId, token: p.token, profile: publicProfile(p), version: PROTOCOL_VERSION });
+      if (this.pingTimer) clearInterval(this.pingTimer);
       this.pingTimer = setInterval(() => this.send({ t: 'ping' }), 20000);
     };
     ws.onmessage = (ev) => {
+      // mensajes de un socket antiguo (p. ej. tras cambiar de servidor) se ignoran
+      if (this.ws !== ws) return;
       let msg: ServerMsg;
       try {
         msg = JSON.parse(ev.data as string);
@@ -86,7 +90,9 @@ class Net {
       this.handlers.get('*')?.forEach((h) => h(msg));
     };
     ws.onclose = () => {
+      if (this.ws !== ws) return;
       if (this.pingTimer) clearInterval(this.pingTimer);
+      this.pingTimer = null;
       this.ws = null;
       netStatus.set('offline');
       this.handlers.get('close')?.forEach((h) => h({ t: 'error', code: 'closed', msg: 'Conexión perdida' }));

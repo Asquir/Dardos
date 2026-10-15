@@ -128,7 +128,7 @@ export interface Profile {
   shop: { day: string; offers: ShopOffer[] };
   purchases: { removeAds: boolean; starterPack: boolean; vipUntil: number; spent: number; history: string[] };
   settings: Settings;
-  tutorial: { done: boolean; tips: string[] };
+  tutorial: { done: boolean; tips: string[]; rewarded?: boolean };
   friends: { id: string; name: string }[];
   blocked: string[];
   club: { id: string; name: string; tag: string; emblem: number } | null;
@@ -141,6 +141,8 @@ export interface Profile {
   liveEvent: LiveEventState | null;
   /** clave del último evento en vivo anunciado */
   seenEvent: string;
+  /** cofres ganados (subida de nivel, torneo…) que se abrirán con su animación */
+  pendingChests: { type: ChestType; title: string }[];
 }
 
 export const PROFILE_KEY = 'diana_profile_v1';
@@ -221,6 +223,7 @@ export function defaultProfile(): Profile {
     challenge: { day: '', best: 0, claimed: 0 },
     liveEvent: null,
     seenEvent: '',
+    pendingChests: [],
   };
 }
 
@@ -232,6 +235,10 @@ function migrate(p: Partial<Profile>): Profile {
   merged.settings = { ...d.settings, ...(p.settings ?? {}) };
   merged.purchases = { ...d.purchases, ...(p.purchases ?? {}) };
   merged.avatar = { ...d.avatar, ...(p.avatar ?? {}) };
+  merged.tutorial = { ...d.tutorial, ...(p.tutorial ?? {}) };
+  // quien ya había hecho el tutorial antes de existir la marca no vuelve a cobrar el regalo
+  if (merged.tutorial.tips.includes('match')) merged.tutorial.rewarded = true;
+  if (!Array.isArray(merged.pendingChests)) merged.pendingChests = [];
   if (!merged.chests || merged.chests.length !== 4) merged.chests = [null, null, null, null];
   return merged;
 }

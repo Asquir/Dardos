@@ -87,12 +87,6 @@ export function TutorialCoach({ m }: { m: MatchUI }) {
 /** Tras la partida del tutorial: regalo de cofre y guía al inicio. */
 export function tutorialAfterMatch(r: MatchResult) {
   void r;
-  mutate((p) => {
-    p.coins += 200;
-    const free = p.chests.findIndex((c) => c === null);
-    if (free >= 0) p.chests[free] = { type: 'silver', arena: 0, readyAt: Date.now() + 4000 };
-    if (!p.tutorial.tips.includes('match')) p.tutorial.tips.push('match');
-  });
   go('home');
 }
 

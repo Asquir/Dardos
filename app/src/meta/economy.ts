@@ -88,6 +88,8 @@ export function addXp(p: Profile, xp: number): { level: number; reward: Reward }
     const r = levelReward(p.level);
     p.coins += r.coins ?? 0;
     p.gems += r.gems ?? 0;
+    // el cofre se abre con su animación en cuanto no haya nada en pantalla (no se pierde al cerrar ventanas)
+    if (r.chest) p.pendingChests.push({ type: r.chest, title: `Nivel ${p.level}` });
     ups.push({ level: p.level, reward: r });
   }
   return ups;
@@ -265,7 +267,11 @@ export function dailyAvailable(p: Profile = profile()): boolean {
 }
 
 export function dailyIndex(p: Profile = profile()): number {
-  const yesterday = dayKey(Date.now() - 86400000);
+  // "ayer" por calendario (restar 24 h falla en los cambios de hora)
+  const d = new Date();
+  d.setHours(12, 0, 0, 0);
+  d.setDate(d.getDate() - 1);
+  const yesterday = dayKey(d.getTime());
   if (p.daily.lastDay === yesterday) return (p.daily.streak + 1) % 7;
   if (p.daily.lastDay === dayKey()) return p.daily.streak;
   return 0;

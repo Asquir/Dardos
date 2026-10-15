@@ -2,7 +2,7 @@
 
 import { dayKey } from '../core/store';
 import { mutate, profile } from './profile';
-import { grant, spend, type GrantResult } from './economy';
+import { spend } from './economy';
 import type { Reward } from './chests';
 import {
   currentLiveEvent,
@@ -79,11 +79,12 @@ export function eventClaimable(): number {
   return eventMilestones(ev.def).filter((m, i) => s.points >= m.pts && !s.claimed.includes(i)).length;
 }
 
-export function claimEventMilestone(i: number): { reward: Reward; result: GrantResult } | null {
+/** Marca el hito como reclamado y devuelve su premio (lo concede quien lo muestra, con claim()). */
+export function claimEventMilestone(i: number): { reward: Reward } | null {
   const ev = currentLiveEvent();
   const ms = eventMilestones(ev.def)[i];
   const s = eventState(profile());
   if (!ms || s.points < ms.pts || s.claimed.includes(i)) return null;
   withEvent((e) => void e.claimed.push(i));
-  return { reward: ms.reward, result: grant(ms.reward) };
+  return { reward: ms.reward };
 }

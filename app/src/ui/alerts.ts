@@ -8,6 +8,7 @@ import { currentLiveEvent, eventMilestones, eventState } from '../meta/liveEvent
 import { FEATURE_LEVEL } from '../meta/progression';
 import { notify, planNotifications, NOTIFY_IDS } from '../services/notify';
 import { banner, go, openModal, ui } from './state';
+import { claim } from './rewards';
 
 const seen = new Set<string>();
 let started = false;
@@ -38,6 +39,13 @@ function check() {
     return;
   }
   const now = Date.now();
+  // cofres pendientes (subida de nivel, torneo…): se abren con animación cuando no hay nada encima
+  const st = ui.get();
+  if (p.pendingChests.length && !st.chest && !st.modals.length && !['game', 'onboarding', 'matchmaking'].includes(st.screen)) {
+    const next = p.pendingChests[0];
+    mutate((q) => void q.pendingChests.shift());
+    claim({ chest: next.type }, next.title);
+  }
   p.chests.forEach((c, i) => {
     if (!c || slotState(c, now) !== 'ready') return;
     const k = chestKey(i, c);
@@ -99,7 +107,7 @@ function onNotificationTap(id: number) {
   if (s.screen === 'game' || s.screen === 'onboarding') return;
   if (id === NOTIFY_IDS.free) (go('home'), openModal({ kind: 'freeChest' }));
   else if (id === NOTIFY_IDS.daily) (go('home'), openModal({ kind: 'daily' }));
-  else if (id === NOTIFY_IDS.event || id === NOTIFY_IDS.tickets) go('liveEvent');
+  else if ((id === NOTIFY_IDS.event || id === NOTIFY_IDS.tickets) && profile().level >= FEATURE_LEVEL.liveEvent) go('liveEvent');
   else go('home');
 }
 

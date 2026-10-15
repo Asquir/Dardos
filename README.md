@@ -21,6 +21,8 @@ con anuncios y compras.
 - Iluminación de cine: haces de luz volumétricos con polvo en suspensión, humo ambiente, anillo LED profesional en los estadios, materiales con barniz (clearcoat), gradación de color por arena, viñeta, grano y bloom.
 - Modos: **301 / 501** (doble para cerrar, legs), **Cricket**, **Alrededor del reloj**, práctica de cierres, lanzamiento libre, partida local de 2 a 4 jugadores, **online 1v1** y salas privadas.
 - IA con 7 niveles de dificultad calibrados (de ~20 a ~100 de media) y tabla de cierres profesional; pista de cierre en pantalla.
+- **Zona objetivo iluminada en la diana**: cuando tienes cierre se enciende el segmento al que tirar (verde «¡CIERRA!» si ese dardo gana, dorado si es parte de la ruta), con un aviso «¡Puedes cerrar!» al empezar el turno. También marca el número que toca en Alrededor del reloj y el recomendado en Cricket. Al apuntar ves el nombre del segmento bajo la mira y notas una vibración al cambiar de zona.
+- Se ve cómo apunta el rival (su mira se asienta antes de lanzar) con cámara de retransmisión en su turno; **racha «en llamas»** con dos o más turnos de 100+ seguidos (estela de fuego y más chispas); marcador que cuenta hacia abajo, sacudida al pasarte, **revancha** con un toque desde los resultados y dardos de exhibición en el fondo del inicio.
 - 7 arenas con escenarios propios: Pub de Barrio, Taberna del Puerto, Club Neón, Salón Dorado, Gran Arena, Campeonato Mundial y Olimpo de Leyendas.
 
 **Progresión y enganche**

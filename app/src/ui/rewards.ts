@@ -7,7 +7,9 @@ import { profile } from '../meta/profile';
 import { arenaForTrophies } from '../meta/arenas';
 import { openModal, showChest, bumpCurrency } from './state';
 import { audio } from '../services/audio';
-import { flyCurrency } from './fx';
+import { flyCurrency, confetti } from './fx';
+import { toast } from './state';
+import type { PostMatch } from '../meta/postmatch';
 
 /** Concede y muestra una recompensa. Los cofres incluidos se abren con animación. */
 export function claim(reward: Reward, title = '¡Recompensa!', onDone?: () => void) {
@@ -50,6 +52,20 @@ export function openChestReward(type: Parameters<typeof showChest>[0]['type'], r
   const res = grant(reward);
   noteChestOpened();
   showChest({ type, reward, onDone: () => (afterGrant(res.levelUps), onDone?.()) });
+}
+
+/** Enseña el premio de un torneo/desafío (ya concedido; los cofres se abren solos desde la cola). */
+export function showPost(post?: PostMatch) {
+  if (!post) return;
+  if (post.champion) {
+    confetti(200);
+    audio.win();
+  }
+  const r = post.reward;
+  if (r && (r.coins || r.gems)) {
+    audio.coin();
+    openModal({ kind: 'reward', title: post.title ?? '¡Premio!', reward: { coins: r.coins, gems: r.gems } });
+  } else if (post.toast) toast(post.toast, post.good ? 'good' : 'info');
 }
 
 export function afterGrant(levelUps: { level: number; reward: Reward }[]) {

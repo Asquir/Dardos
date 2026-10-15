@@ -4359,3 +4359,150 @@ input[type='range']::-webkit-slider-thumb {
     transform: scale(1.35);
   }
 }
+
+/* ------------------------------------------------------------------ marcador: animaciones */
+
+.score-num {
+  display: inline-block;
+  animation: scorePop 0.45s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+@keyframes scorePop {
+  0% {
+    transform: scale(1.35);
+    color: #ffe37a;
+  }
+}
+
+.pcard.fire {
+  border-color: #ff8a2a !important;
+  box-shadow:
+    0 0 0 1px rgba(255, 138, 42, 0.6),
+    0 0 22px rgba(255, 110, 20, 0.55),
+    0 8px 18px rgba(0, 0, 0, 0.4);
+  background: linear-gradient(180deg, rgba(120, 40, 10, 0.92), rgba(40, 14, 30, 0.94));
+  animation: fireGlow 1.1s ease-in-out infinite;
+}
+
+@keyframes fireGlow {
+  50% {
+    box-shadow:
+      0 0 0 1px rgba(255, 160, 60, 0.8),
+      0 0 34px rgba(255, 120, 20, 0.8),
+      0 8px 18px rgba(0, 0, 0, 0.4);
+  }
+}
+
+.fire-badge {
+  position: absolute;
+  top: -9px;
+  right: 10px;
+  padding: 1px 7px;
+  border-radius: 99px;
+  font-size: 12px;
+  font-weight: 900;
+  background: linear-gradient(180deg, #ffb347, #ff5a1a);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35), 0 0 10px rgba(255, 120, 20, 0.7);
+  animation: tkPop 0.4s ease both;
+}
+
+.pcard.right .fire-badge {
+  right: auto;
+  left: 10px;
+}
+
+.pcard.bust {
+  animation: bustShake 0.6s ease;
+  border-color: var(--red) !important;
+  box-shadow: 0 0 24px rgba(255, 60, 90, 0.7);
+}
+
+@keyframes bustShake {
+  10%,
+  50%,
+  90% {
+    transform: translateX(-6px);
+  }
+  30%,
+  70% {
+    transform: translateX(6px);
+  }
+}
+
+.turn-banner.finish {
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.turn-banner .sub {
+  font-family: var(--font-body) !important;
+  font-weight: 900;
+  font-size: 15px !important;
+  padding: 5px 18px !important;
+  color: #0b2a14;
+  background: linear-gradient(90deg, transparent, #5df08e 18%, #36d66b 82%, transparent) !important;
+}
+
+.cricket-board .ph {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.cricket-board .ph.on {
+  color: #fff;
+}
+
+/* ------------------------------------------------------------------ resultados con 3-4 jugadores */
+
+.ranking {
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.rank-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px 6px 8px;
+  border-radius: 14px;
+  background: rgba(20, 26, 64, 0.9);
+  border: 1px solid var(--stroke);
+  font-weight: 900;
+  animation: lineIn 0.35s ease both;
+}
+
+.rank-row.winner {
+  border-color: var(--gold);
+  background: linear-gradient(90deg, rgba(255, 201, 58, 0.25), rgba(20, 26, 64, 0.9));
+}
+
+.rank-row img {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+}
+
+.rank-row .pos {
+  width: 26px;
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 20px;
+}
+
+.rank-row .nm {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rank-row .sc {
+  color: var(--muted);
+  font-size: 13px;
+}

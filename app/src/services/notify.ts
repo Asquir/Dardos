@@ -6,6 +6,8 @@ import { LocalNotifications } from '@capacitor/local-notifications';
 import { CHESTS } from '../meta/chests';
 import type { Profile } from '../meta/profile';
 import { currentLiveEvent, MAX_TICKETS, TICKET_PERIOD } from '../meta/liveEvents';
+import { FEATURE_LEVEL } from '../meta/progression';
+import { dayKey } from '../core/store';
 
 const native = Capacitor.isNativePlatform();
 const CHANNEL = 'diana_avisos';
@@ -37,18 +39,43 @@ export function planNotifications(p: Profile, now = Date.now(), nextEvent?: { at
   if (p.freeChestAt > now + 60_000) {
     out.push({ id: ID.free, at: p.freeChestAt, title: 'Cofre gratis disponible', body: 'Tienes un cofre gratis esperándote. ¡Entra a por él! 🎯' });
   }
-  // recompensa diaria: mañana a las 10:00
-  const tomorrow = new Date(now);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  tomorrow.setHours(10, 0, 0, 0);
-  out.push({ id: ID.daily, at: tomorrow.getTime(), title: 'Recompensa diaria 📅', body: `¡Día ${((p.daily.streak + 1) % 7) + 1} de tu racha! Reclama tu premio antes de que se pierda.` });
-  if (nextEvent && nextEvent.at > now + 60_000) {
+  // recompensa diaria: si ya la cogiste hoy, mañana a las 10:00; si no, hoy (más tarde)
+  const claimedToday = p.daily.lastDay === dayKey(now);
+  const yest = new Date(now);
+  yest.setHours(12, 0, 0, 0);
+  yest.setDate(yest.getDate() - 1);
+  const streakAlive = p.daily.lastDay === dayKey(yest.getTime());
+  let dailyAt: number;
+  let day: number;
+  if (claimedToday) {
+    const t = new Date(now);
+    t.setDate(t.getDate() + 1);
+    t.setHours(10, 0, 0, 0);
+    dailyAt = t.getTime();
+    day = ((p.daily.streak + 1) % 7) + 1;
+  } else {
+    const t = new Date(now);
+    t.setHours(10, 0, 0, 0);
+    if (t.getTime() < now + 60_000) t.setTime(now + 3 * 3600_000);
+    if (new Date(t).getHours() >= 22 || new Date(t).getDate() !== new Date(now).getDate()) {
+      const n = new Date(now);
+      n.setDate(n.getDate() + 1);
+      n.setHours(10, 0, 0, 0);
+      t.setTime(n.getTime());
+    }
+    dailyAt = t.getTime();
+    day = (streakAlive ? (p.daily.streak + 1) % 7 : 0) + 1;
+  }
+  out.push({ id: ID.daily, at: dailyAt, title: 'Recompensa diaria 📅', body: `¡Día ${day} de tu racha! Reclama tu premio antes de que se pierda.` });
+  // los eventos en vivo se desbloquean en el nivel 2
+  const eventsOpen = p.level >= FEATURE_LEVEL.liveEvent;
+  if (eventsOpen && nextEvent && nextEvent.at > now + 60_000) {
     out.push({ id: ID.event, at: nextEvent.at, title: '¡Nuevo evento! ⚡', body: `Empieza «${nextEvent.name}». Premios exclusivos por tiempo limitado.` });
   }
   // entradas del evento recargadas
   const ev = currentLiveEvent(now);
   const le = p.liveEvent;
-  if (le && le.key === ev.key && le.tickets < MAX_TICKETS) {
+  if (eventsOpen && le && le.key === ev.key && le.tickets < MAX_TICKETS) {
     const full = le.ticketAt + (MAX_TICKETS - le.tickets) * TICKET_PERIOD;
     if (full < ev.endsAt && full > now + 60_000) {
       out.push({ id: ID.tickets, at: full, title: 'Entradas recargadas 🎟️', body: `Tienes ${MAX_TICKETS} entradas para «${ev.def.name}». ¡Sigue sumando puntos!` });

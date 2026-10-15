@@ -23,16 +23,24 @@ con anuncios y compras.
 - IA con 7 niveles de dificultad calibrados (de ~20 a ~100 de media) y tabla de cierres profesional; pista de cierre en pantalla.
 - **Zona objetivo iluminada en la diana**: cuando tienes cierre se enciende el segmento al que tirar (verde «¡CIERRA!» si ese dardo gana, dorado si es parte de la ruta), con un aviso «¡Puedes cerrar!» al empezar el turno. También marca el número que toca en Alrededor del reloj y el recomendado en Cricket. Al apuntar ves el nombre del segmento bajo la mira y notas una vibración al cambiar de zona.
 - Se ve cómo apunta el rival (su mira se asienta antes de lanzar) con cámara de retransmisión en su turno; **racha «en llamas»** con dos o más turnos de 100+ seguidos (estela de fuego y más chispas); marcador que cuenta hacia abajo, sacudida al pasarte, **revancha** con un toque desde los resultados y dardos de exhibición en el fondo del inicio.
+- **Zona bonus ★ en cada turno** (partidas con apuesta: clasificatorias, online, eventos y torneo): se ilumina en dorado un simple, doble, triple o el bull con su premio en monedas, que crece con la arena. Tirar a por ella o a por los puntos es decisión tuya.
+- **Combos**: triples, dobles, bull o bonus seguidos encadenan un combo con sonido que sube de tono; desde x3 cada dardo bueno suma monedas. El bonus y el mejor combo aparecen en los resultados.
+- **⏩ Acelerar** el turno del rival con un toque (x2, se mantiene durante la partida) y un ritmo entre turnos más ágil.
 - 7 arenas con escenarios propios: Pub de Barrio, Taberna del Puerto, Club Neón, Salón Dorado, Gran Arena, Campeonato Mundial y Olimpo de Leyendas.
 
 **Progresión y enganche**
 - Monedas, gemas, nivel con recompensas, copas y ascenso de arena.
 - 52 piezas coleccionables (cuerpos, cañas, aletas) en 4 rarezas, con estadísticas (Precisión, Estabilidad, Control) y mejoras con cartas + monedas.
-- Taller de dardos: vitrina 3D de estudio (suelo con reflejo, rayos y chispas según rareza, luz que barre el metal) con dardo
+- Taller de dardos compacto: vitrina 3D de estudio (suelo con reflejo, rayos y chispas según rareza, luz que barre el metal)
+  con el poder, la pieza elegida y el zoom encima, estadísticas en una fila y colección en 4 columnas. El dardo está
   modelado pieza a pieza (punta con estrías, cuerpo de tungsteno con moleteado y brillo anisotrópico, caña de carbono o
-  titanio tornasolado, aletas con relieve y holográficas). Se toca una pieza para enfocarla con un escáner, se arrastra para
-  girarla, y cada ficha permite probarla montada en el dardo, ver el cambio de **Poder** y mejorarla con una animación de
-  anillos, destello y confeti.
+  titanio tornasolado, aletas con relieve y holográficas). Cada pestaña enfoca su pieza, se arrastra para girarla, y cada
+  ficha permite probarla montada en el dardo, ver el cambio de **Poder** y mejorarla con una animación de anillos,
+  destello y confeti.
+
+**Rendimiento en móvil**
+- Calidad automática que baja sola si el móvil no llega a 38 fps (y lo recuerda para la próxima vez); a «baja» solo si va muy justo.
+- Sombras que solo se recalculan cuando se mueve un dardo, resolución ajustada en pantallas de alta densidad, shaders de los dardos compilados durante la presentación, miniaturas generadas de una en una, menús a ~20 fps con el 3D detrás y sin desenfoques sobre la escena.
 - Cofres con temporizador (4 huecos), cofre gratis cada 4 h, cofre por anuncio, apertura animada en 3D con cartas, **probabilidades visibles** (obligatorio en las tiendas).
 - Misiones diarias, recompensa diaria de 7 días, ruleta de la suerte, desafío diario con estrellas, logros, torneo eliminatorio de 8, pase de temporada (gratis + premium) de 35 niveles.
 - **Eventos en vivo** que rotan cada 3 días (Fiebre del Bull, Noche de Triples, Copa Relámpago, Maestros del Cricket, Reyes del Cierre, Locura del 180) con reglas de puntuación propias, entradas que se recargan, 10 hitos con premios y una aleta exclusiva.

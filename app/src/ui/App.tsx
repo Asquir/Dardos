@@ -45,6 +45,7 @@ const NAV: { id: ScreenName; label: string; Icon: typeof ShopIco }[] = [
   { id: 'events', label: 'Eventos', Icon: EventsIco },
 ];
 
+const LOW_POWER: ScreenName[] = ['shop', 'events', 'social', 'tournament'];
 const NO_CHROME: ScreenName[] = ['game', 'matchmaking', 'onboarding', 'avatar', 'profile', 'season'];
 const NO_NAV: ScreenName[] = [...NO_CHROME, 'profile', 'season', 'tournament', 'liveEvent'];
 
@@ -81,6 +82,13 @@ export function App() {
     engine.setView(v);
     audio.startMusic();
   }, [s.screen, !!s.chest, p.selectedArena, p.boardSkin]);
+
+  // con el 3D tapado (menús atenuados o una ventana encima) se pinta a ~20 fps: la interfaz va más fluida
+  const topModal = s.modals[s.modals.length - 1]?.kind;
+  const lowPower = !s.chest && (LOW_POWER.includes(s.screen) || (!!topModal && topModal !== 'item'));
+  useEffect(() => {
+    engine.lowPower = lowPower;
+  }, [lowPower]);
 
   const chrome = !NO_CHROME.includes(s.screen) && !s.chest;
   const nav = !NO_NAV.includes(s.screen) && !s.chest;

@@ -328,6 +328,12 @@ class AudioEngine {
     this.sparkle(1);
     this.cheer(0.45);
   }
+  /** Combo: arpegio que sube un tono con cada dardo bueno seguido. */
+  combo(n: number) {
+    const f = 660 * Math.pow(1.122, Math.min(8, n - 2));
+    [1, 1.26, 1.5, 2].forEach((m, i) => this.tone(f * m, 0.14, 'triangle', 0.06, i * 0.05, this.uiBus));
+    if (n >= 3) this.sparkle(0.5 + Math.min(1, (n - 3) * 0.25));
+  }
   /** Chispas eléctricas (triples y bull). */
   sparkle(intensity = 1) {
     const n = Math.round(10 * intensity);

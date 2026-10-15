@@ -22,6 +22,8 @@ export interface View {
   grade?: Partial<Grade>;
   onActivate?(): void;
   onDeactivate?(): void;
+  /** la vista marca engine.renderer.shadowMap.needsUpdate solo cuando algo que da sombra se mueve */
+  manualShadows?: boolean;
 }
 
 export interface Grade {
@@ -128,6 +130,8 @@ class Engine {
   width = 1;
   height = 1;
   paused = false;
+  /** pantallas de menú con el 3D atenuado detrás: basta con ~20 fps y la interfaz va más suelta */
+  lowPower = false;
 
   init(canvas: HTMLCanvasElement, quality: Quality) {
     this.canvas = canvas;
@@ -186,7 +190,8 @@ class Engine {
 
   pixelRatio() {
     const dpr = window.devicePixelRatio || 1;
-    return Math.min(dpr, this.quality === 'high' ? 2 : this.quality === 'medium' ? 1.5 : 1);
+    // en un iPhone (dpr 3) a 2x se pintaban 1,3 millones de píxeles con MSAA y bloom: 1,75 se ve igual de nítido
+    return Math.min(dpr, this.quality === 'high' ? 1.75 : this.quality === 'medium' ? 1.4 : 1);
   }
 
   setQuality(q: Quality, manual = true) {
@@ -198,6 +203,7 @@ class Engine {
     this.setupComposer();
     // el compositor nuevo nace con una escena vacía: sin esto la partida se quedaba a oscuras
     this.bindView();
+    this.renderer.shadowMap.needsUpdate = true;
     this.resize();
     this.fpsSamples = [];
     this.settle = 90;
@@ -257,6 +263,9 @@ class Engine {
     this.view = v;
     v.scene.environment = this.envMap;
     this.bindView();
+    // el mapa de sombras es un render más de toda la escena: en la partida solo se rehace al moverse algo
+    this.renderer.shadowMap.autoUpdate = !v.manualShadows;
+    this.renderer.shadowMap.needsUpdate = true;
     // los primeros fotogramas compilan shaders: no cuentan para medir el rendimiento
     this.fpsSamples = [];
     this.settle = 90;
@@ -293,6 +302,7 @@ class Engine {
     this.last = performance.now();
     const loop = (now: number) => {
       requestAnimationFrame(loop);
+      if (this.lowPower && !this.paused && now - this.last < 1000 / 20 - 4) return;
       const dt = Math.min(0.05, (now - this.last) / 1000);
       this.last = now;
       if (this.paused || !this.view) return;
@@ -312,7 +322,7 @@ class Engine {
   }
 
   private trackFps(dt: number) {
-    if (!this.autoQuality) return;
+    if (!this.autoQuality || this.lowPower) return;
     if (this.settle > 0) {
       this.settle--;
       return;

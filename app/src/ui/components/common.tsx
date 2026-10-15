@@ -1,7 +1,7 @@
 // Componentes reutilizables de la interfaz.
 
 import type { ComponentChildren, JSX } from 'preact';
-import { useEffect, useMemo, useRef } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { AvatarConfig } from '@shared/protocol';
 import { Close, Coin, Gem, XpStar, Trophy, Lock } from '../icons';
 import { fmtNum, fmtTime, useNow } from '../../core/store';
@@ -49,28 +49,80 @@ export function Progress({ value, max, label, color = '', style }: { value: numb
 }
 
 const avCache = new Map<string, string>();
+const itemCache = new Map<string, string>();
+
+// Las miniaturas 3D se pintan de una en una (unos ms por fotograma) en vez de todas a la vez al
+// abrir una pantalla: así no hay tirones. Las de componentes que ya no se ven se descartan.
+type ThumbJob = { key: string; make: () => string; subs: Set<(src: string) => void> };
+const thumbJobs = new Map<string, ThumbJob>();
+let pumping = false;
+function pumpThumbs() {
+  const t0 = performance.now();
+  for (const [key, job] of thumbJobs) {
+    if (performance.now() - t0 > 6) break;
+    thumbJobs.delete(key);
+    if (!job.subs.size) continue;
+    const src = job.make();
+    job.subs.forEach((f) => f(src));
+  }
+  if (thumbJobs.size) requestAnimationFrame(pumpThumbs);
+  else pumping = false;
+}
+function useThumb(key: string, cached: () => string | undefined, make: () => string): string {
+  const [src, setSrc] = useState(() => cached() ?? '');
+  useEffect(() => {
+    const hit = cached();
+    if (hit) return setSrc(hit);
+    setSrc('');
+    let job = thumbJobs.get(key);
+    if (!job) thumbJobs.set(key, (job = { key, make, subs: new Set() }));
+    const sub = (v: string) => setSrc(v);
+    job.subs.add(sub);
+    if (!pumping) {
+      pumping = true;
+      requestAnimationFrame(pumpThumbs);
+    }
+    return () => void job!.subs.delete(sub);
+  }, [key]);
+  return src;
+}
 export function AvatarImg({ cfg, size = 128, h, frame = 'head', pose = 'idle', class: cls, style }: { cfg: AvatarConfig; size?: number; h?: number; frame?: AvatarFrame; pose?: AvatarPose; class?: string; style?: JSX.CSSProperties }) {
   const hh = h ?? size;
   const key = JSON.stringify(cfg) + size + 'x' + hh + frame + pose;
-  const src = useMemo(() => {
-    let s = avCache.get(key);
-    if (s) {
-      // LRU: lo usado recientemente pasa al final
-      avCache.delete(key);
-      avCache.set(key, s);
-    } else {
-      s = avatarShot(cfg, frame, size, hh, pose);
+  const src = useThumb(
+    key,
+    () => {
+      const s = avCache.get(key);
+      if (s) {
+        // LRU: lo usado recientemente pasa al final
+        avCache.delete(key);
+        avCache.set(key, s);
+      }
+      return s;
+    },
+    () => {
+      const s = avatarShot(cfg, frame, size, hh, pose);
       avCache.set(key, s);
       if (avCache.size > 160) avCache.delete(avCache.keys().next().value!);
-    }
-    return s;
-  }, [key]);
-  return <img src={src} class={cls} style={style} alt="" draggable={false} />;
+      return s;
+    },
+  );
+  return <img src={src || BLANK} class={cls} style={style} alt="" draggable={false} />;
 }
 
+const BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
 export function ItemThumb({ id, class: cls, style }: { id: string; class?: string; style?: JSX.CSSProperties }) {
-  const src = useMemo(() => (ITEM_MAP[id] ? itemThumbnail(id) : ''), [id]);
-  return <img src={src} class={cls} style={style} alt="" draggable={false} />;
+  const src = useThumb(
+    'item:' + id,
+    () => (ITEM_MAP[id] ? itemCache.get(id) : BLANK),
+    () => {
+      const s = itemThumbnail(id);
+      itemCache.set(id, s);
+      return s;
+    },
+  );
+  return <img src={src || BLANK} class={cls} style={style} alt="" draggable={false} />;
 }
 
 export function FlightSwatch({ design, size = 48 }: { design: string; size?: number }) {

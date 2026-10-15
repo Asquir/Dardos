@@ -77,6 +77,10 @@ function fadeTexture(): THREE.Texture {
   return toTexture(c);
 }
 
+// vectores de trabajo (sin crear objetos en cada fotograma)
+const TMP_A = new THREE.Vector3();
+const TMP_B = new THREE.Vector3();
+
 export class PreviewView implements View {
   scene = new THREE.Scene();
   camera = new THREE.PerspectiveCamera(30, 1, 0.01, 30);
@@ -262,10 +266,10 @@ export class PreviewView implements View {
 
     // encuadre: todo el dardo o la pieza elegida, centrado en la zona visible
     let fw = 0.2;
-    const target = new THREE.Vector3();
+    const target = TMP_A.set(0, 0, 0);
     if (this.dart) {
       this.dart.group.updateWorldMatrix(true, false);
-      target.copy(this.dart.group.localToWorld(new THREE.Vector3(0, 0, this.partZ())));
+      target.copy(this.dart.group.localToWorld(TMP_B.set(0, 0, this.partZ())));
       fw = this.focusPart === 'all' ? this.dart.length * 1.12 : this.focusPart === 'flight' ? 0.085 : 0.07;
     }
     // las aletas giran y ocupan casi tanto alto como ancho
@@ -291,7 +295,7 @@ export class PreviewView implements View {
     const rm = this.rays.material as THREE.MeshBasicMaterial;
     rm.opacity += (fx.rays * (0.85 + Math.sin(t * 1.7) * 0.15) - rm.opacity) * k;
     this.rays.rotation.z = t * 0.12;
-    this.rays.position.copy(this.camTarget).add(new THREE.Vector3(0, 0, -0.35));
+    this.rays.position.copy(this.camTarget).add(TMP_B.set(0, 0, -0.35));
     const sm = this.sparks.material as THREE.PointsMaterial;
     sm.opacity = 0.6 * fx.sparks;
     const sp = this.sparks.geometry.attributes.position as THREE.BufferAttribute;

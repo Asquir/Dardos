@@ -1,6 +1,6 @@
 // Controlador de partida: une reglas, jugadores (humano, bot, online), la vista 3D y la interfaz.
 
-import { resolveHit, scoreAt, targetPoint, type Hit } from '@shared/board';
+import { resolveHit, scoreAt, targetPoint, SEGMENTS, type Hit, type Target } from '@shared/board';
 import { applyThrow, createMatch, forfeitTurn, threeDartAvg, type MatchConfig, type MatchState, type ThrowEvent } from '@shared/rules';
 import { botThrow, chooseTarget, rng, type BotProfile } from '@shared/bot';
 import { checkoutRoute, routeLabel, suggestTarget } from '@shared/checkout';
@@ -87,6 +87,9 @@ export interface MatchResult {
   eventPoints?: number;
   eventLines?: { label: string; pts: number }[];
   doubled?: boolean;
+  /** monedas de las zonas bonus y los combos (ya sumadas) */
+  bonusCoins?: number;
+  bestCombo?: number;
 }
 
 export interface MatchUI {
@@ -113,12 +116,32 @@ export interface MatchUI {
   reconnecting: boolean;
   /** diferencia de reloj con el servidor (ms) para la cuenta atrás */
   clockOffset: number;
+  /** zona bonus del turno del jugador: si un dardo cae en ella, monedas */
+  bonus: { target: Target; coins: number } | null;
+  /** monedas ganadas con bonus y combos (se suman al terminar) */
+  bonusCoins: number;
+  /** aviso en pantalla de bonus o combo */
+  bonusFx: { id: number; kind: 'bonus' | 'combo'; text: string; coins: number; x: number; y: number } | null;
+  /** dardos buenos seguidos (triples, dobles, bull o bonus) */
+  combo: number;
+  bestCombo: number;
+  /** turnos de los bots acelerados */
+  fast: boolean;
 }
 
 export const matchStore = new Store<MatchUI | null>(null);
 
 let uid = 1;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** velocidad de los turnos de los bots al acelerarlos */
+const FAST = 2.2;
+
+/** ¿Cae el dardo en la zona bonus? (en "S" vale cualquiera de las dos zonas de simple) */
+function inBonus(t: Target, h: Hit): boolean {
+  if (t === 'DB') return h.ring === 'DB';
+  if (t === 'SB') return h.ring === 'SB' || h.ring === 'DB';
+  return h.ring === t[0] && h.num === parseInt(t.slice(1), 10);
+}
 
 export class Match {
   ui: MatchUI;
@@ -154,6 +177,12 @@ export class Match {
       streak: setup.players.map(() => 0),
       reconnecting: false,
       clockOffset: 0,
+      bonus: null,
+      bonusCoins: 0,
+      bonusFx: null,
+      combo: 0,
+      bestCombo: 0,
+      fast: false,
     };
     matchStore.set(this.ui);
   }
@@ -181,7 +210,9 @@ export class Match {
     if (this.setup.online) this.listenOnline();
     this.updateCheckout();
     this.emit();
-    await sleep(1900);
+    // mientras dura la presentación se compilan los dardos de todos (evita tirones al lanzar)
+    const looks = [...new Map(this.setup.players.map((p) => [p.dart.barrel + p.dart.shaft + p.dart.flight, p.dart])).values()];
+    await Promise.all([sleep(1500), v.warmup(looks)]);
     if (this.aborted) return;
     this.ui.phase = 'wait';
     this.emit();
@@ -217,13 +248,15 @@ export class Match {
     const stats = dartStats(p);
     this.view.setTurnCam(false);
     this.view.fire = (this.ui.streak[idx] ?? 0) >= 2;
+    if (!this.view.slowMo) engine.timeScale = 1;
+    this.showTarget();
+    if (idx === this.you && this.ui.state.turn.length === 0) this.pickBonus();
     this.ui.phase = 'aim';
     this.emit();
     this.view.onHint = (h) => {
       this.ui.hint = h;
       this.emit();
     };
-    this.showTarget();
     const shot = await this.view.humanAim({
       look: pl.dart,
       stats,
@@ -284,7 +317,10 @@ export class Match {
     const bot = pl.bot!;
     this.view.setTurnCam(true);
     this.view.fire = (this.ui.streak[idx] ?? 0) >= 2;
-    await sleep(this.ui.state.turn.length === 0 ? 500 : 160 + this.r() * 220);
+    this.clearBonus();
+    const pace = this.ui.fast ? FAST : 1;
+    if (this.ui.fast && !this.view.slowMo) engine.timeScale = FAST;
+    await sleep((this.ui.state.turn.length === 0 ? 380 : 160 + this.r() * 220) / pace);
     if (this.aborted) return;
     const { target, hit } = botThrow(this.ui.state, idx, bot.skill, this.r);
     // se ve cómo apunta el rival antes de lanzar
@@ -327,6 +363,82 @@ export class Match {
     const localHuman = this.setup.online ? player === this.you : this.setup.players[player].kind === 'human' && player === 0;
     if (localHuman) this.myHits.push(hit);
     if (localHuman && this.setup.type !== 'tutorial') track({ type: 'dart', hit });
+    if (player === this.you && this.setup.type !== 'local' && this.setup.type !== 'tutorial') this.scoreBonus(hit, pos);
+    this.emit();
+  }
+
+  // ------------------------------------------------------------------ bonus y combos
+
+  /** Solo dan monedas las partidas con algo en juego (si no, se podrían farmear en el entrenamiento). */
+  private get paysBonus(): boolean {
+    const t = this.setup.type;
+    return t === 'ranked' || t === 'online' || t === 'event' || t === 'tournament';
+  }
+
+  private bonusBase(): number {
+    const entry = (ARENAS[this.setup.arena] ?? ARENAS[0]).entry;
+    return Math.max(5, Math.round((entry * 0.04) / 5) * 5);
+  }
+
+  /** Elige la zona bonus del turno (nunca en el número al que se aconseja tirar ni en el 20). */
+  private pickBonus() {
+    this.clearBonus();
+    if (!this.paysBonus) return;
+    const base = this.bonusBase();
+    const avoid = this.curTarget ? this.curTarget.slice(1) : '';
+    for (let k = 0; k < 8; k++) {
+      const r = this.r();
+      const n = SEGMENTS[1 + Math.floor(this.r() * 19)];
+      const [t, mult]: [Target, number] = r < 0.45 ? ['S' + n, 1] : r < 0.65 ? ['D' + n, 3] : r < 0.85 ? ['T' + n, 3] : r < 0.95 ? ['SB', 2] : ['DB', 5];
+      if (avoid && t.slice(1) === avoid) continue;
+      this.ui.bonus = { target: t, coins: base * mult };
+      this.view.setBonus(t, base * mult);
+      return;
+    }
+  }
+
+  private clearBonus() {
+    if (!this.ui.bonus) return;
+    this.ui.bonus = null;
+    this.view.setBonus(null);
+  }
+
+  private scoreBonus(hit: Hit, pos: { x: number; y: number }) {
+    const b = this.ui.bonus;
+    const bonus = !!b && !hit.bounce && inBonus(b.target, hit);
+    const good = bonus || hit.ring === 'T' || hit.ring === 'D' || hit.ring === 'DB' || hit.ring === 'SB';
+    this.ui.combo = good ? this.ui.combo + 1 : 0;
+    this.ui.bestCombo = Math.max(this.ui.bestCombo, this.ui.combo);
+    let coins = 0;
+    let text = '';
+    if (bonus) {
+      coins += b!.coins;
+      text = '¡BONUS!';
+      this.clearBonus();
+      this.view.bonusBurst(hit.x, hit.y);
+      audio.coinBurst(8);
+      haptics.success();
+    }
+    const c = this.ui.combo;
+    if (c >= 2) {
+      // a partir de x3 cada dardo bueno seguido suma monedas (hasta 3 veces la base)
+      if (c >= 3) coins += Math.min(3, (c - 2) * 0.5) * this.bonusBase();
+      text = text ? `${text} COMBO x${c}` : `COMBO x${c}`;
+      audio.combo(c);
+      if (c >= 3) haptics.medium();
+    }
+    if (!text) return;
+    coins = this.paysBonus ? Math.round(coins) : 0;
+    this.ui.bonusCoins += coins;
+    this.ui.bonusFx = { id: uid++, kind: bonus ? 'bonus' : 'combo', text, coins, x: pos.x, y: pos.y };
+  }
+
+  /** Acelera (o deja de acelerar) los turnos de los bots. */
+  toggleFast() {
+    this.ui.fast = !this.ui.fast;
+    const cur = this.setup.players[this.ui.state.current];
+    if (cur?.kind === 'bot' && !this.view.slowMo) engine.timeScale = this.ui.fast ? FAST : 1;
+    audio.click();
     this.emit();
   }
 
@@ -344,6 +456,7 @@ export class Match {
     this.updateCheckout();
     this.emit();
     if (event === 'dart') return;
+    this.clearBonus();
     if (event === 'bust') {
       this.say('red', '¡TE PASAS!', 'Bust');
       audio.bust();
@@ -386,7 +499,7 @@ export class Match {
         audio.cheer(1.2);
         this.view.celebrate(1);
         if (event === 'matchWon') {
-          await sleep(2300);
+          await sleep(2000);
           if (this.aborted) return;
           if (this.setup.online) return this.awaitRemoteEnd(s.winner ?? w);
           this.finish(s.winner ?? w, 'win');
@@ -397,7 +510,8 @@ export class Match {
     }
     this.ui.phase = 'between';
     this.emit();
-    await sleep(event === 'bust' ? 1300 : 1100);
+    const pace = this.ui.fast && this.setup.players[idx]?.kind === 'bot' ? FAST : 1;
+    await sleep((event === 'bust' ? 1100 : 900) / pace);
     if (this.aborted) return;
     await this.view.clearDarts();
     if (this.aborted) return;
@@ -412,29 +526,36 @@ export class Match {
     this.emit();
   }
 
+  private curTarget: Target | null = null;
+  private aimAt(t: Target | null, kind?: 'finish' | 'route' | 'score', wedge?: boolean) {
+    this.curTarget = t;
+    this.view.setTarget(t, kind, wedge);
+  }
+
   /** Ilumina en la diana la zona a la que conviene tirar con el siguiente dardo. */
   private showTarget() {
+    this.curTarget = null;
     const s = this.ui.state;
-    if (!profile().settings.showCheckout) return this.view.setTarget(null);
+    if (!profile().settings.showCheckout) return this.aimAt(null);
     const p = s.players[s.current];
     const dartsLeft = 3 - s.turn.length;
     switch (s.config.mode) {
       case 'x01': {
         const route = p.remaining <= 170 ? checkoutRoute(p.remaining, dartsLeft, s.config.doubleOut) : null;
         if (route && s.turn.length === 0) audio.ready();
-        if (route) return this.view.setTarget(route[0], route.length === 1 ? 'finish' : 'route');
+        if (route) return this.aimAt(route[0], route.length === 1 ? 'finish' : 'route');
         // sin cierre: sugerencia para dejar una buena salida (solo cuando ya se acerca el final)
-        if (p.remaining <= 200) return this.view.setTarget(suggestTarget(p.remaining, dartsLeft, s.config.doubleOut), 'score');
-        return this.view.setTarget(null);
+        if (p.remaining <= 200) return this.aimAt(suggestTarget(p.remaining, dartsLeft, s.config.doubleOut), 'score');
+        return this.aimAt(null);
       }
       case 'atc': {
         const t = chooseTarget(s, s.current);
-        return this.view.setTarget(t, 'route', t !== 'DB');
+        return this.aimAt(t, 'route', t !== 'DB');
       }
       case 'cricket':
-        return this.view.setTarget(chooseTarget(s, s.current), 'route');
+        return this.aimAt(chooseTarget(s, s.current), 'route');
       default:
-        return this.view.setTarget(null);
+        return this.aimAt(null);
     }
   }
 
@@ -575,7 +696,10 @@ export class Match {
 
   private async remoteStep() {
     this.ui.phase = 'wait';
-    if (this.ui.state.current !== this.you) this.view.setTurnCam(true);
+    if (this.ui.state.current !== this.you) {
+      this.view.setTurnCam(true);
+      this.clearBonus();
+    }
     this.emit();
     const m = await this.nextRemote();
     if (m.t === 'match_end') return this.handleRemoteEnd(m);
@@ -645,7 +769,9 @@ export class Match {
     const setup = this.setup;
     const arena = ARENAS[setup.arena] ?? ARENAS[0];
     const solo = setup.players.length === 1;
+    engine.timeScale = 1;
     const res: MatchResult = {
+      bestCombo: this.ui.bestCombo,
       won: winner === you && reason !== 'limit',
       winner,
       reason,
@@ -734,6 +860,10 @@ export class Match {
       } else if (setup.type === 'challenge') {
         res.xp = 15;
         addSeasonXp(p, 15);
+      }
+      if (reason !== 'forfeit' && this.ui.bonusCoins > 0) {
+        res.bonusCoins = this.ui.bonusCoins;
+        p.coins += this.ui.bonusCoins;
       }
       if (res.xp) res.levelUps = addXp(p, res.xp);
       p.history = [{ at: Date.now(), mode: setup.type, opponent: opp.name, won: res.won, avg: Math.round(avg * 10) / 10, online: !!setup.online }, ...p.history].slice(0, 30);

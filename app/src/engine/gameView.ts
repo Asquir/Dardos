@@ -22,6 +22,17 @@ const HELD_SCALE = 0.78;
 const tmpV = new THREE.Vector3();
 const tmpV2 = new THREE.Vector3();
 const Z_AXIS = new THREE.Vector3(0, 0, 1);
+const INTRO_POS = new THREE.Vector3(1.4, 2.25, THROW_DISTANCE + 1.6);
+const INTRO_LOOK = new THREE.Vector3(0, BOARD_HEIGHT - 0.15, 0);
+
+interface Glow {
+  group: THREE.Group;
+  fill: THREE.MeshBasicMaterial;
+  edge: THREE.MeshBasicMaterial;
+  pin: THREE.Sprite;
+  t: number;
+  key: string;
+}
 
 export interface AimStats {
   acc: number;
@@ -206,7 +217,8 @@ export class GameView implements View {
   private sparkFree: number[] = [];
   private waves: Wave[] = [];
   // zona objetivo iluminada y etiqueta de la mira
-  private targetGlow: { group: THREE.Group; fill: THREE.MeshBasicMaterial; edge: THREE.MeshBasicMaterial; pin: THREE.Sprite; t: number; key: string } | null = null;
+  private targetGlow: Glow | null = null;
+  private bonusGlow: Glow | null = null;
   private aimLabel: THREE.Sprite;
   private aimLabelText = '';
   private lastTick = 0;
@@ -235,6 +247,9 @@ export class GameView implements View {
   private intro = 0;
   private celebrateT = 0;
   private celebrateFocus = new THREE.Vector3();
+  manualShadows = true;
+  private shadowDirty = true;
+  private wasMoving = false;
 
   // apuntado
   private held: DartModel | null = null;
@@ -302,27 +317,45 @@ export class GameView implements View {
   setTarget(t: Target | null, kind: 'finish' | 'route' | 'score' = 'score', wedge = false) {
     const key = t ? `${t}|${kind}|${wedge}` : '';
     if (this.targetGlow?.key === key) return;
-    if (this.targetGlow) {
-      const g = this.targetGlow.group;
-      g.removeFromParent();
-      g.traverse((o) => {
-        const m = o as THREE.Mesh;
-        if (m.geometry) m.geometry.dispose();
-      });
-      this.targetGlow.fill.dispose();
-      this.targetGlow.edge.dispose();
-      this.targetGlow.pin.removeFromParent();
-      (this.targetGlow.pin.material as THREE.SpriteMaterial).dispose();
-      this.targetGlow = null;
-    }
+    if (this.targetGlow) this.disposeGlow(this.targetGlow);
+    this.targetGlow = null;
     if (!t) return;
     const color = kind === 'finish' ? '#3dff8a' : kind === 'route' ? '#ffd23a' : '#5fd0ff';
+    const sub = kind === 'finish' ? '¡CIERRA!' : kind === 'route' ? 'CIERRE' : '';
+    this.targetGlow = this.makeGlow(t, wedge, color, targetLabel(t), sub, key);
+  }
+
+  /** Zona bonus del turno: dorada, con su premio en una chapa. */
+  setBonus(t: Target | null, coins = 0) {
+    const key = t ? `${t}|${coins}` : '';
+    if (this.bonusGlow?.key === key) return;
+    if (this.bonusGlow) this.disposeGlow(this.bonusGlow);
+    this.bonusGlow = null;
+    if (!t) return;
+    // sin chapa: el premio ya se ve en el marcador (y en los números laterales se salía de la pantalla)
+    this.bonusGlow = this.makeGlow(t, t[0] === 'S', '#ffb21a', '', '', key, 0.12);
+  }
+
+  /** ¿Está en marcha la cámara lenta del posible 180? */
+  get slowMo(): boolean {
+    return !!this.cine;
+  }
+
+  /** Lluvia dorada cuando un dardo cae en la zona bonus. */
+  bonusBurst(xmm: number, ymm: number) {
+    const p = this.boardPoint(xmm, ymm, 0.01);
+    this.sparkBurst(p, 40, '#ffd23a', 1.2);
+    this.sparkBurst(p, 16, '#ffffff', 0.8);
+    this.env?.flash(0.5);
+  }
+
+  private makeGlow(t: Target, wedge: boolean, color: string, label: string, sub: string, key: string, whiten = 0.45): Glow {
     const group = new THREE.Group();
     // borde luminoso (zona algo más grande, detrás) + relleno claro encima
     const edge = new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(1.8), transparent: true, opacity: 0.9, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
     const halo = new THREE.Mesh(targetGeometry(t, wedge, 2.2), edge);
     halo.renderOrder = 8;
-    const fill = new THREE.MeshBasicMaterial({ color: new THREE.Color(color).lerp(new THREE.Color('#ffffff'), 0.45), transparent: true, opacity: 0.55, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
+    const fill = new THREE.MeshBasicMaterial({ color: new THREE.Color(color).lerp(new THREE.Color('#ffffff'), whiten), transparent: true, opacity: 0.55, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
     const mesh = new THREE.Mesh(targetGeometry(t, wedge), fill);
     mesh.position.z = 0.0002;
     mesh.renderOrder = 9;
@@ -334,21 +367,35 @@ export class GameView implements View {
     const i = SEGMENTS.indexOf(num as (typeof SEGMENTS)[number]);
     const ang = (90 - i * 18) * DEG;
     const r = t === 'DB' || t === 'SB' ? 0 : 252;
-    const sub = kind === 'finish' ? '¡CIERRA!' : kind === 'route' ? 'CIERRE' : '';
-    const pin = new THREE.Sprite(new THREE.SpriteMaterial({ map: pillTexture(targetLabel(t), sub, color), transparent: true, depthWrite: false, toneMapped: false }));
+    const pin = new THREE.Sprite(new THREE.SpriteMaterial({ map: label ? pillTexture(label, sub, color) : null, transparent: true, depthWrite: false, toneMapped: false }));
+    pin.userData.hidden = !label;
     const pp = r ? this.boardPoint(Math.cos(ang) * r, Math.sin(ang) * r, 0.01) : this.boardPoint(0, 252, 0.01);
     pin.position.copy(pp);
     pin.scale.set(0.09, 0.045, 1);
     pin.renderOrder = 11;
     this.scene.add(pin);
-    this.targetGlow = { group, fill, edge, pin, t: 0, key };
+    return { group, fill, edge, pin, t: 0, key };
+  }
+
+  private disposeGlow(g: Glow) {
+    g.group.removeFromParent();
+    g.group.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.geometry) m.geometry.dispose();
+    });
+    g.fill.dispose();
+    g.edge.dispose();
+    g.pin.removeFromParent();
+    (g.pin.material as THREE.SpriteMaterial).dispose();
   }
 
   setBoardStyle(style: BoardStyle) {
+    this.shadowDirty = true;
     this.board.setStyle(style);
   }
 
   setArena(id: number) {
+    this.shadowDirty = true;
     if (id === this.arena) return;
     if (this.env) this.scene.remove(this.env.group);
     let env = this.envCache.get(id);
@@ -454,6 +501,7 @@ export class GameView implements View {
   }
 
   private placeStuck(m: DartModel, xmm: number, ymm: number, seed: number) {
+    this.shadowDirty = true;
     const tip = this.boardPoint(xmm, ymm, -0.006);
     m.group.position.copy(tip);
     const dir = new THREE.Vector3(Math.sin(seed) * 0.16 + 0.04, 0.24 + Math.cos(seed * 2) * 0.05, 1).normalize();
@@ -518,6 +566,7 @@ export class GameView implements View {
   }
 
   private clearImmediate() {
+    this.shadowDirty = true;
     for (const s of this.stuck) s.model.dispose();
     for (const f of this.flying) {
       f.model.dispose();
@@ -535,6 +584,7 @@ export class GameView implements View {
     this.cine = null;
     engine.timeScale = 1;
     this.setTarget(null);
+    this.setBonus(null);
     this.ghostAnim?.resolve();
     this.ghostAnim = null;
     this.ghost.visible(false);
@@ -758,13 +808,43 @@ export class GameView implements View {
     this.inputEl = null;
   }
 
+  /**
+   * Compila de antemano los materiales de los dardos de la partida. Si no, el primer lanzamiento
+   * de cada dardo (y el primer turno del jugador) daba un tirón mientras el móvil compilaba shaders.
+   */
+  async warmup(looks: DartLook[]) {
+    const models = looks.map((l, i) => {
+      const m = buildDart(l, { shadows: i === 0 });
+      m.group.scale.setScalar(DART_SCALE);
+      m.group.position.set(i * 0.05, -6, 0); // bajo el suelo: se compila pero no se ve
+      this.scene.add(m.group);
+      return m;
+    });
+    try {
+      const r = engine.renderer;
+      if (r.extensions.has('KHR_parallel_shader_compile')) await r.compileAsync(this.scene, this.camera);
+      else r.compile(this.scene, this.camera);
+    } catch {
+      /* si falla, se compilará al vuelo */
+    }
+    for (const m of models) m.dispose();
+  }
+
+  /** Rehace el mapa de sombras solo si un dardo se mueve (o justo después de pararse). */
+  private updateShadows() {
+    const moving = this.flying.length > 0 || this.falling.length > 0 || this.leaving.length > 0 || this.stuck.some((s) => s.vib > 0);
+    if (moving || this.wasMoving || this.shadowDirty) engine.renderer.shadowMap.needsUpdate = true;
+    this.shadowDirty = false;
+    this.wasMoving = moving;
+  }
+
   /** Activa el turno del jugador y espera a que lance. */
   humanAim(opts: HumanAimOptions): Promise<AimResult | null> {
     this.aimOpts = opts;
     const key = opts.look.barrel + opts.look.shaft + opts.look.flight;
     if (!this.held || this.heldLook !== key) {
       this.held?.dispose();
-      this.held = buildDart(opts.look);
+      this.held = buildDart(opts.look, { shadows: false });
       this.held.group.scale.setScalar(HELD_SCALE);
       this.heldLook = key;
       this.scene.add(this.held.group);
@@ -933,6 +1013,7 @@ export class GameView implements View {
   // ------------------------------------------------------------------ bucle
 
   update(t: number, dt: number) {
+    this.updateShadows();
     this.env?.update(t, dt);
 
     // cámara
@@ -965,8 +1046,8 @@ export class GameView implements View {
       if (this.intro > 0) {
         this.intro = Math.max(0, this.intro - dt / 1.8);
         const k = ease(this.intro);
-        pos.lerp(new THREE.Vector3(1.4, 2.25, THROW_DISTANCE + 1.6), k);
-        look.lerp(new THREE.Vector3(0, BOARD_HEIGHT - 0.15, 0), k);
+        pos.lerp(INTRO_POS, k);
+        look.lerp(INTRO_LOOK, k);
       }
       if (this.cine) {
         const c = this.cine;
@@ -1154,15 +1235,16 @@ export class GameView implements View {
     }
 
     // zona objetivo: late suavemente
-    if (this.targetGlow) {
-      const tg = this.targetGlow;
+    for (const tg of [this.targetGlow, this.bonusGlow]) {
+      if (!tg) continue;
+      const gold = tg === this.bonusGlow;
       tg.t += dt;
-      const pulse = 0.5 + 0.5 * Math.sin(tg.t * 4.2);
-      tg.fill.opacity = 0.38 + pulse * 0.4;
-      tg.edge.opacity = 0.7 + pulse * 0.3;
+      const pulse = 0.5 + 0.5 * Math.sin(tg.t * (gold ? 6 : 4.2));
+      tg.fill.opacity = gold ? 0.2 + pulse * 0.3 : 0.38 + pulse * 0.4;
+      tg.edge.opacity = gold ? 0.5 + pulse * 0.35 : 0.7 + pulse * 0.3;
       tg.group.visible = this.mode === 'game';
-      tg.pin.visible = this.mode === 'game';
-      const ps = (0.09 * (1 + pulse * 0.06)) / Math.max(1, this.zoom * 0.85);
+      tg.pin.visible = this.mode === 'game' && !tg.pin.userData.hidden;
+      const ps = (0.09 * (1 + pulse * (gold ? 0.12 : 0.06))) / Math.max(1, this.zoom * 0.85);
       tg.pin.scale.set(ps, ps / 2, 1);
     }
 

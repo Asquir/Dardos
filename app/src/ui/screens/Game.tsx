@@ -111,6 +111,8 @@ function Hud({ m }: { m: MatchUI }) {
     const t = setTimeout(() => setBustP(-1), 750);
     return () => clearTimeout(t);
   }, [m.lastTurn?.key]);
+  const botTurn = (m.phase === 'wait' || m.phase === 'between') && pls[cur]?.kind === 'bot';
+  const showCo = !!m.checkout && s.config.mode === 'x01' && (pls[cur].kind === 'human' || cur === you);
   const showHint = m.phase === 'aim' && m.setup.type !== 'tutorial' && (m.hint === 'flick' || profile().stats.darts < 12);
   const legsToWin = s.config.legsToWin;
   const emote = m.emote;
@@ -166,9 +168,24 @@ function Hud({ m }: { m: MatchUI }) {
         })}
         <div class="dart-pip total">{turnSum}</div>
       </div>
+      {(m.bonus || m.bonusCoins > 0 || m.combo >= 2) && (
+        <div class={'bonus-row' + (showCo ? ' low' : '')}>
+          {m.bonus && (
+            <div class="bonus-chip" key={m.bonus.target}>
+              ★ BONUS <b>{bonusLabel(m.bonus.target)}</b> +{fmtNum(m.bonus.coins)} <Coin class="ico" />
+            </div>
+          )}
+          {m.combo >= 2 && <div class="combo-chip">🔥 x{m.combo}</div>}
+          {m.bonusCoins > 0 && (
+            <div class="bonus-bank" key={m.bonusCoins}>
+              <Coin class="ico" /> +{fmtNum(m.bonusCoins)}
+            </div>
+          )}
+        </div>
+      )}
 
       {s.config.mode === 'cricket' && <CricketBoard m={m} />}
-      {m.checkout && s.config.mode === 'x01' && (pls[cur].kind === 'human' || cur === you) && <div class="checkout-pill">🎯 {m.checkout}</div>}
+      {showCo && <div class="checkout-pill">🎯 {m.checkout}</div>}
       {m.deadline > 0 && cur === you && <div class={'timer-ring' + (timeLeft <= 5 ? ' low' : '')}>⏱ {timeLeft}s</div>}
       {!m.opponentConnected && <div class="checkout-pill" style={{ top: 'calc(var(--safe-top) + 150px)', background: 'rgba(200,30,60,.9)' }}>Rival desconectado...</div>}
       {m.reconnecting && <div class="checkout-pill" style={{ top: 'calc(var(--safe-top) + 186px)', background: 'rgba(200,120,20,.92)' }}>📶 Reconectando… no cierres la app</div>}
@@ -179,6 +196,21 @@ function Hud({ m }: { m: MatchUI }) {
           <div class="p">{pp.ring === 'MISS' ? pp.label : pp.points}</div>
         </div>
       ))}
+      {m.bonusFx && (
+        <div key={m.bonusFx.id} class={'bonus-fx ' + m.bonusFx.kind} style={{ left: m.bonusFx.x + 'px', top: m.bonusFx.y - 70 + 'px' }}>
+          <div class="t outline">{m.bonusFx.text}</div>
+          {m.bonusFx.coins > 0 && (
+            <div class="c">
+              +{fmtNum(m.bonusFx.coins)} <Coin class="ico" />
+            </div>
+          )}
+        </div>
+      )}
+      {botTurn && (
+        <button class={'ff-btn' + (m.fast ? ' on' : '')} onClick={() => currentMatch()?.toggleFast()}>
+          {m.fast ? '⏩ x2' : '⏩ Acelerar'}
+        </button>
+      )}
       {m.message && (
         <div key={m.message.id} class={'bigmsg ' + m.message.kind}>
           <div class="t">{m.message.text}</div>
@@ -220,6 +252,11 @@ function Hud({ m }: { m: MatchUI }) {
       </div>
     </>
   );
+}
+
+/** Nombre corto de la zona bonus: "T17", "D5", "17", "25", "BULL". */
+function bonusLabel(t: string) {
+  return t === 'DB' ? 'BULL' : t === 'SB' ? '25' : t[0] === 'S' ? t.slice(1) : t;
 }
 
 function ConfettiOnce({ k }: { k: number }) {
@@ -525,6 +562,13 @@ function Results({ m }: { m: MatchUI }) {
             <div class="k">XP</div>
           </div>
         )}
+        {(r.bonusCoins ?? 0) > 0 && (
+          <div class="reward bonus" style={{ animationDelay: '.25s' }}>
+            <span class="ico star">★</span>
+            <div class="v">+{fmtNum(r.bonusCoins!)}</div>
+            <div class="k">Bonus</div>
+          </div>
+        )}
         {r.chest && (
           <div class="reward" style={{ animationDelay: '.3s', borderColor: 'var(--gold)' }}>
             <ChestImg type={r.chest} class="ico" />
@@ -532,6 +576,7 @@ function Results({ m }: { m: MatchUI }) {
           </div>
         )}
       </div>
+      {(r.bestCombo ?? 0) >= 3 && <div class="combo-best">🔥 Mejor combo: x{r.bestCombo}</div>}
       {r.chestFull && <div class="muted" style={{ fontWeight: 800, fontSize: '12px', textAlign: 'center' }}>Tus huecos de cofres están llenos: ¡abre alguno para ganar más!</div>}
       <div style={{ width: '100%', maxWidth: '340px', marginTop: '8px' }}>
         <Progress value={p.xp} max={xpForNext(p.level)} color="blue" label={`Nivel ${p.level} · ${p.xp}/${xpForNext(p.level)} XP`} />

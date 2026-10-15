@@ -24,6 +24,7 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 ];
 const RARITY_ORDER = { legendary: 0, epic: 1, rare: 2, common: 3 } as const;
 const SLOT_LABEL: Record<Slot, string> = { barrel: 'Cuerpo', shaft: 'Caña', flight: 'Aletas' };
+const TAB_TITLE: Record<Slot, string> = { barrel: 'Tus cuerpos', shaft: 'Tus cañas', flight: 'Tus aletas' };
 
 /** Poder total del dardo (suma de las tres estadísticas). */
 export function dartPower(st: { acc: number; stab: number; ctrl: number }) {
@@ -75,57 +76,61 @@ export function Collection() {
   const owned = base.filter((i) => p.items[i.id]).length;
   const upgradable = (slot: Slot) => (slot === 'barrel' ? BARRELS : slot === 'shaft' ? SHAFTS : FLIGHTS).filter((i) => upgradeInfo(p, i.id).can).length;
 
+  const slotTab: Slot | null = tab === 'barrel' || tab === 'shaft' || tab === 'flight' ? tab : null;
+  const shown = slotTab;
+  const shownDef = shown ? getItem(p.equipped[shown]) : null;
+  const zoomed = focus !== 'all' && !!slotTab;
+
   return (
     <div class="screen workshop">
       <div class="ws-stage" ref={stage} {...drag} onDblClick={() => setFocus('all')}>
-        <div class="ws-power">
-          <span>PODER</span>
+        <div class="ws-power" title="Poder del dardo">
+          <span>⚡</span>
           <b>
             <ScoreNum value={dartPower(st)} />
           </b>
+          <small>PODER</small>
         </div>
-        <div class="ws-parts">
-          {(['barrel', 'shaft', 'flight'] as Slot[]).map((slot) => {
-            const def = getItem(p.equipped[slot]);
-            return (
-              <button key={slot} class={'ws-chip ' + def.rarity + (focus === slot ? ' on' : '')} onClick={() => (focus === slot ? (audio.click(), setFocus('all')) : pickTab(slot))}>
-                <small>{SLOT_LABEL[slot]}</small>
-                {def.name}
-                <em>Nv.{p.items[def.id]?.level ?? 1}</em>
-              </button>
-            );
-          })}
-        </div>
+        {slotTab && (
+          <button class="ws-zoom" onClick={() => (audio.click(), setFocus(zoomed ? 'all' : slotTab))} aria-label={zoomed ? 'Ver el dardo entero' : 'Acercar la pieza'}>
+            {zoomed ? '⤢' : '🔍'}
+          </button>
+        )}
+        {shownDef && (
+          <div class={'ws-caption ' + shownDef.rarity} key={shownDef.id}>
+            <small>{SLOT_LABEL[shown!]}</small>
+            <b>{shownDef.name}</b>
+            <em>Nv.{p.items[shownDef.id]?.level ?? 1}</em>
+          </div>
+        )}
       </div>
-      <div class="panel stats-panel ws-stats">
-        <StatRow label="🎯 Precisión" v={st.acc} color="linear-gradient(90deg,#ff7a8f,#e0123a)" />
-        <StatRow label="🧘 Estabilidad" v={st.stab} color="linear-gradient(90deg,#8fd0ff,#2a7dff)" />
-        <StatRow label="✋ Control" v={st.ctrl} color="linear-gradient(90deg,#9dffbf,#16a34a)" />
+      <div class="ws-stats">
+        <MiniStat icon="🎯" label="Precisión" v={st.acc} color="linear-gradient(90deg,#ff7a8f,#e0123a)" />
+        <MiniStat icon="🧘" label="Estabilidad" v={st.stab} color="linear-gradient(90deg,#8fd0ff,#2a7dff)" />
+        <MiniStat icon="✋" label="Control" v={st.ctrl} color="linear-gradient(90deg,#9dffbf,#16a34a)" />
       </div>
-      <div class="pad" style={{ marginTop: '8px' }}>
-        <div class="tabs ws-tabs">
-          {TABS.map((t) => {
-            const n = t.id === 'barrel' || t.id === 'shaft' || t.id === 'flight' ? upgradable(t.id) : 0;
-            return (
-              <button key={t.id} class={tab === t.id ? 'on' : ''} onClick={() => pickTab(t.id)}>
-                <span class="ti">{t.icon}</span>
-                {t.label}
-                {n > 0 && <span class="badge">{n}</span>}
-              </button>
-            );
-          })}
-        </div>
+      <div class="ws-tabs">
+        {TABS.map((t) => {
+          const n = t.id === 'barrel' || t.id === 'shaft' || t.id === 'flight' ? upgradable(t.id) : 0;
+          return (
+            <button key={t.id} class={tab === t.id ? 'on' : ''} onClick={() => pickTab(t.id)}>
+              <span class="ti">{t.icon}</span>
+              <span class="tl">{t.label}</span>
+              {n > 0 && <span class="badge">{n}</span>}
+            </button>
+          );
+        })}
       </div>
       <div class="scroll grow">
         {list.length > 0 && (
           <>
-            <div class="ws-count pad">
+            <div class="ws-count">
+              <span>{TAB_TITLE[tab as Slot]}</span>
               <span>
-                Descubiertos <b>{owned}</b>/{base.length}
+                <b>{owned}</b>/{base.length} descubiertos
               </span>
-              <i style={{ width: (owned / base.length) * 100 + '%' }} />
             </div>
-            <div class="item-grid">
+            <div class="item-grid ws-grid">
               {list.map((it, i) => (
                 <ItemCard key={it.id} it={it} i={i} />
               ))}
@@ -134,6 +139,22 @@ export function Collection() {
         )}
         {tab === 'board' && <Boards />}
         {tab === 'emote' && <Emotes />}
+      </div>
+    </div>
+  );
+}
+
+/** Estadística compacta: icono, nombre, valor y una barra fina. */
+function MiniStat({ icon, label, v, color }: { icon: string; label: string; v: number; color: string }) {
+  return (
+    <div class="mini-stat">
+      <div class="wst-top">
+        <span class="wst-ic">{icon}</span>
+        <span class="wst-lb">{label}</span>
+        <b>{Math.round(v)}</b>
+      </div>
+      <div class="wst-bar">
+        <i style={{ width: Math.min(100, v) + '%', background: color }} />
       </div>
     </div>
   );

@@ -282,9 +282,6 @@ export function buildEnvironment(theme: ArenaTheme, quality: 'low' | 'medium' | 
     );
     m.position.set(n.x, n.y, -0.05);
     g.add(m);
-    const glow = new THREE.PointLight(n.color, 0.14, 0, 2);
-    glow.position.set(n.x, n.y, 0.35);
-    g.add(glow);
     // zumbido suave del neón (sin apagones: en el móvil parecía que se iba la luz)
     const base = m.material as THREE.MeshBasicMaterial;
     const ph = r() * 6;

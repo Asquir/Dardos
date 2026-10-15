@@ -80,4 +80,13 @@ npx cap open ios       # Xcode (macOS) → Product > Archive
 Cada push a GitHub ejecuta `.github/workflows/build.yml`, que pasa los tests y genera un **APK de prueba**
 descargable en *Actions → (ejecución) → Artifacts*, además de comprobar que iOS compila.
 
+Otras utilidades:
+
+```bash
+node scripts/build-web-demo.mjs        # demo web en un solo HTML (app/dist-demo/)
+node scripts/store-screenshots.cjs     # capturas 1290x2796 para las tiendas (con npm run dev arrancado)
+node scripts/render-icon.cjs           # regenera icono y splash desde app/assets/icon-source.html
+cd app && npx capacitor-assets generate  # recrea todos los tamaños de icono/splash nativos
+```
+
 👉 **Guía completa para publicar en Google Play y App Store: [docs/PUBLICAR.md](docs/PUBLICAR.md)**

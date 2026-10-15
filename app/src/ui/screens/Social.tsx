@@ -10,7 +10,7 @@ import { Trophy, ShareIco, GlobeIco } from '../icons';
 import { openModal, closeModal, toast } from '../state';
 import { audio } from '../../services/audio';
 import { shareText } from '../../services/platform';
-import { FEATURE_LEVEL, ACHIEVEMENTS } from '../../meta/progression';
+import { FEATURE_LEVEL } from '../../meta/progression';
 import { censor } from '@shared/text';
 
 export const EMBLEMS = ['🦁', '🐺', '🦅', '🐉', '⚡', '🔥', '🎯', '👑', '💀', '🍀', '🌙', '⭐', '🦈', '🐻', '🚀', '🏴‍☠️'];
@@ -449,7 +449,6 @@ function Ranking() {
           </span>
         </div>
       ))}
-      {void ACHIEVEMENTS}
     </div>
   );
 }

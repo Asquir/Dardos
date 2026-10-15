@@ -27,7 +27,12 @@ con anuncios y compras.
 
 **Progresión y enganche**
 - Monedas, gemas, nivel con recompensas, copas y ascenso de arena.
-- 52 piezas coleccionables (cuerpos, cañas, aletas) en 4 rarezas, con estadísticas (Precisión, Estabilidad, Control) y mejoras con cartas + monedas; vista 3D giratoria.
+- 52 piezas coleccionables (cuerpos, cañas, aletas) en 4 rarezas, con estadísticas (Precisión, Estabilidad, Control) y mejoras con cartas + monedas.
+- Taller de dardos: vitrina 3D de estudio (suelo con reflejo, rayos y chispas según rareza, luz que barre el metal) con dardo
+  modelado pieza a pieza (punta con estrías, cuerpo de tungsteno con moleteado y brillo anisotrópico, caña de carbono o
+  titanio tornasolado, aletas con relieve y holográficas). Se toca una pieza para enfocarla con un escáner, se arrastra para
+  girarla, y cada ficha permite probarla montada en el dardo, ver el cambio de **Poder** y mejorarla con una animación de
+  anillos, destello y confeti.
 - Cofres con temporizador (4 huecos), cofre gratis cada 4 h, cofre por anuncio, apertura animada en 3D con cartas, **probabilidades visibles** (obligatorio en las tiendas).
 - Misiones diarias, recompensa diaria de 7 días, ruleta de la suerte, desafío diario con estrellas, logros, torneo eliminatorio de 8, pase de temporada (gratis + premium) de 35 niveles.
 - **Eventos en vivo** que rotan cada 3 días (Fiebre del Bull, Noche de Triples, Copa Relámpago, Maestros del Cricket, Reyes del Cierre, Locura del 180) con reglas de puntuación propias, entradas que se recargan, 10 hitos con premios y una aleta exclusiva.

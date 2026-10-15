@@ -943,14 +943,19 @@ const flightCache = new Map<string, THREE.Texture>();
 export function flightTexture(design: string): THREE.Texture {
   let t = flightCache.get(design);
   if (t) return t;
-  const [c, ctx] = makeCanvas(256);
-  (FLIGHT_DESIGNS[design] ?? FLIGHT_DESIGNS.solid_red)(ctx, 256);
+  const S = 512;
+  const [c, ctx] = makeCanvas(S);
+  (FLIGHT_DESIGNS[design] ?? FLIGHT_DESIGNS.solid_red)(ctx, S);
   // brillo plástico sutil
-  const g = ctx.createLinearGradient(0, 0, 256, 256);
+  const g = ctx.createLinearGradient(0, 0, S, S);
   g.addColorStop(0, 'rgba(255,255,255,0.18)');
   g.addColorStop(0.5, 'rgba(255,255,255,0)');
   ctx.fillStyle = g;
-  ctx.fillRect(0, 0, 256, 256);
+  ctx.fillRect(0, 0, S, S);
+  // ribete del borde
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+  ctx.lineWidth = S * 0.012;
+  ctx.strokeRect(0, 0, S, S);
   t = toTexture(c);
   flightCache.set(design, t);
   return t;

@@ -21,6 +21,7 @@ import { ui, go, closeModal } from './ui/state';
 import { App } from './ui/App';
 import { currentMatch } from './game/match';
 import { initOnlineHandlers } from './game/online';
+import { startAlerts, syncNotifications } from './ui/alerts';
 
 const splash = document.getElementById('splash');
 const bar = document.getElementById('splash-bar');
@@ -73,6 +74,14 @@ async function boot() {
     audio.startMusic();
   };
   window.addEventListener('pointerdown', unlock, { once: false, passive: true });
+  // pequeña vibración al pulsar botones
+  document.addEventListener(
+    'pointerdown',
+    (e) => {
+      if ((e.target as HTMLElement).closest?.('.btn, .nav button, .side-btn, .icon-btn, .av-groups button')) haptics.light();
+    },
+    { passive: true },
+  );
   await initPlatform({
     onBack: () => {
       const s = ui.get();
@@ -95,6 +104,7 @@ async function boot() {
       engine.paused = true;
       audio.suspend();
       void saveNow();
+      syncNotifications(true);
     },
     onResume: () => {
       engine.paused = false;
@@ -115,6 +125,7 @@ async function boot() {
   void ads.init(p.settings.personalizedAds);
   void iap.init(p.id);
   initOnlineHandlers();
+  startAlerts();
   if (net.enabled()) net.connect();
   setInterval(() => ensureDaily(), 60_000);
   (window as unknown as { __diana: unknown }).__diana = { profile, go, currentMatch, engine, gameView, ui };

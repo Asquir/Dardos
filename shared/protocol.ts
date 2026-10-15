@@ -14,6 +14,20 @@ export interface AvatarConfig {
   shirt: string;
   shirtColor: number;
   number: number;
+  /** complexión 0-3 */
+  body?: number;
+  /** forma de la cara */
+  face?: string;
+  eyeStyle?: string;
+  brows?: string;
+  mouth?: string;
+  nose?: string;
+  marks?: string;
+  pants?: string;
+  pantsColor?: number;
+  shoes?: string;
+  shoesColor?: number;
+  acc?: string;
 }
 
 export interface DartLook {

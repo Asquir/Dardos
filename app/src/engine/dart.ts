@@ -159,7 +159,7 @@ export function buildDart(look: DartLook, opts: { shadows?: boolean } = {}): Dar
   // Cuerpo
   const bGeo = cached('barrel_' + bd.id, () => new THREE.LatheGeometry(barrelProfile(bd), 28));
   const bMat = cachedMat('barrel_' + bd.id, () => {
-    const m = new THREE.MeshStandardMaterial({ color: bd.color, metalness: bd.metalness, roughness: bd.roughness });
+    const m = new THREE.MeshPhysicalMaterial({ color: bd.color, metalness: bd.metalness, roughness: bd.roughness, clearcoat: 0.35, clearcoatRoughness: 0.2 });
     if (bd.grip === 'knurl') {
       m.normalMap = knurl('knurl');
       m.normalScale.set(0.8, 0.8);
@@ -200,7 +200,7 @@ export function buildDart(look: DartLook, opts: { shadows?: boolean } = {}): Dar
     return new THREE.LatheGeometry(pts, 16);
   });
   const sMat = cachedMat('shaft_' + sd.id, () => {
-    const m = new THREE.MeshStandardMaterial({ color: sd.color, metalness: sd.metalness, roughness: sd.roughness });
+    const m = new THREE.MeshPhysicalMaterial({ color: sd.color, metalness: sd.metalness, roughness: sd.roughness, clearcoat: sd.metalness > 0.5 ? 0.3 : 0.9, clearcoatRoughness: 0.1 });
     if (sd.emissive) {
       m.emissive = new THREE.Color(sd.emissive);
       m.emissiveIntensity = 1.6;
@@ -217,7 +217,10 @@ export function buildDart(look: DartLook, opts: { shadows?: boolean } = {}): Dar
 
   // Aletas: 4 alas en cruz
   const wingG = wingGeometry(fd.shape);
-  const fMat = cachedMat('flight_' + fd.design, () => new THREE.MeshStandardMaterial({ map: flightTexture(fd.design), side: THREE.DoubleSide, roughness: 0.42, metalness: fd.design === 'gold' ? 0.6 : 0.05 }));
+  const fMat = cachedMat(
+    'flight_' + fd.design,
+    () => new THREE.MeshPhysicalMaterial({ map: flightTexture(fd.design), side: THREE.DoubleSide, roughness: 0.45, metalness: fd.design === 'gold' ? 0.6 : 0.05, clearcoat: 0.85, clearcoatRoughness: 0.12 }),
+  );
   const flightBase = POINT_LEN + L + SL - 14 * MM;
   const flight = new THREE.Group();
   for (let k = 0; k < 4; k++) {

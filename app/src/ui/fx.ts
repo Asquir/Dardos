@@ -102,3 +102,45 @@ export function countUp(el: HTMLElement | null, to: number, ms = 900, from = 0) 
   };
   requestAnimationFrame(step);
 }
+
+/** Monedas o gemas que salen volando hacia su contador de la barra superior. */
+export function flyCurrency(kind: 'coins' | 'gems', amount = 8, from?: { x: number; y: number }, onArrive?: () => void): boolean {
+  const boxes = document.querySelectorAll<HTMLElement>('.topbar .currency');
+  const box = boxes[kind === 'coins' ? 0 : 1];
+  if (!box || !box.offsetParent) return false;
+  const icon = box.querySelector<SVGElement>('.ico');
+  const tr = (icon ?? box).getBoundingClientRect();
+  const tx = tr.x + tr.width / 2;
+  const ty = tr.y + tr.height / 2;
+  const fx = from ?? { x: innerWidth / 2, y: innerHeight * 0.48 };
+  const n = Math.max(3, Math.min(14, amount));
+  let arrived = false;
+  for (let i = 0; i < n; i++) {
+    const el = (icon ? icon.cloneNode(true) : document.createElement('div')) as HTMLElement;
+    el.classList.add('fly-coin');
+    document.body.appendChild(el);
+    const a = (i / n) * Math.PI * 2 + Math.random() * 0.6;
+    const r = 40 + Math.random() * 60;
+    const sx = fx.x + Math.cos(a) * r;
+    const sy = fx.y + Math.sin(a) * r * 0.7;
+    const anim = el.animate(
+      [
+        { transform: `translate(${fx.x}px, ${fx.y}px) scale(0.3) rotate(0deg)`, opacity: 0 },
+        { transform: `translate(${sx}px, ${sy}px) scale(1.2) rotate(${(Math.random() - 0.5) * 90}deg)`, opacity: 1, offset: 0.32 },
+        { transform: `translate(${tx}px, ${ty}px) scale(0.55) rotate(0deg)`, opacity: 1 },
+      ],
+      { duration: 820 + Math.random() * 160, delay: i * 45, easing: 'cubic-bezier(0.45, 0, 0.7, 1)', fill: 'forwards' },
+    );
+    anim.onfinish = () => {
+      el.remove();
+      if (!arrived) {
+        arrived = true;
+        onArrive?.();
+      }
+      box.classList.remove('bump');
+      void box.offsetWidth;
+      box.classList.add('bump');
+    };
+  }
+  return true;
+}

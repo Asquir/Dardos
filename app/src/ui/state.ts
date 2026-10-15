@@ -17,7 +17,8 @@ export type ScreenName =
   | 'game'
   | 'matchmaking'
   | 'tournament'
-  | 'onboarding';
+  | 'onboarding'
+  | 'liveEvent';
 
 export type ModalSpec =
   | { kind: 'daily' }
@@ -40,12 +41,25 @@ export type ModalSpec =
   | { kind: 'training' }
   | { kind: 'nameEdit' }
   | { kind: 'clubCreate' }
-  | { kind: 'freeChest' };
+  | { kind: 'freeChest' }
+  | { kind: 'notifyAsk' };
 
 export interface Toast {
   id: number;
   text: string;
   kind: 'good' | 'bad' | 'info';
+}
+
+export interface Banner {
+  id: number;
+  icon: string;
+  title: string;
+  text: string;
+  tone: 'gold' | 'blue' | 'purple' | 'green' | 'red';
+  /** al tocar el aviso */
+  onTap?: () => void;
+  /** puede mostrarse durante la partida */
+  inGame?: boolean;
 }
 
 export interface ChestOpenState {
@@ -62,6 +76,9 @@ export interface UIState {
   toasts: Toast[];
   chest: ChestOpenState | null;
   bump: { coins: number; gems: number };
+  banners: Banner[];
+  /** número de transición de pantalla (para animarla) */
+  nav: number;
 }
 
 export const ui = new Store<UIState>({
@@ -71,11 +88,22 @@ export const ui = new Store<UIState>({
   toasts: [],
   chest: null,
   bump: { coins: 0, gems: 0 },
+  banners: [],
+  nav: 0,
 });
 
+const TAB_ORDER: ScreenName[] = ['shop', 'collection', 'home', 'social', 'events'];
+
 export function go(screen: ScreenName, params: Record<string, unknown> = {}) {
-  if (ui.get().screen !== screen) audio.whooshUi();
+  const prev = ui.get().screen;
+  if (prev !== screen) {
+    audio.whooshUi();
+    const a = TAB_ORDER.indexOf(prev);
+    const b = TAB_ORDER.indexOf(screen);
+    document.documentElement.dataset.nav = a >= 0 && b >= 0 ? (b > a ? 'right' : 'left') : 'up';
+  }
   ui.update((s) => {
+    if (s.screen !== screen) s.nav++;
     s.screen = screen;
     s.params = params;
   });
@@ -132,4 +160,20 @@ export function closeChest() {
     s.chest = null;
   });
   c?.onDone?.();
+}
+
+let bid = 1;
+/** Aviso animado en la parte superior (estilo notificación). Se encolan y se muestran de uno en uno. */
+export function banner(b: Omit<Banner, 'id' | 'tone'> & { tone?: Banner['tone'] }) {
+  const id = bid++;
+  ui.update((s) => {
+    if (s.banners.some((x) => x.title === b.title && x.text === b.text)) return;
+    s.banners = [...s.banners, { ...b, tone: b.tone ?? 'gold', id }].slice(-4);
+  });
+}
+
+export function dismissBanner(id: number) {
+  ui.update((s) => {
+    s.banners = s.banners.filter((b) => b.id !== id);
+  });
 }

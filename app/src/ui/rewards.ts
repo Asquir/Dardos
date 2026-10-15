@@ -7,6 +7,7 @@ import { profile } from '../meta/profile';
 import { arenaForTrophies } from '../meta/arenas';
 import { openModal, showChest, bumpCurrency } from './state';
 import { audio } from '../services/audio';
+import { flyCurrency } from './fx';
 
 /** Concede y muestra una recompensa. Los cofres incluidos se abren con animación. */
 export function claim(reward: Reward, title = '¡Recompensa!', onDone?: () => void) {
@@ -27,8 +28,14 @@ export function claim(reward: Reward, title = '¡Recompensa!', onDone?: () => vo
     return;
   }
   const res = grant(reward);
-  if (reward.coins) bumpCurrency('coins');
-  if (reward.gems) bumpCurrency('gems');
+  if (reward.coins) {
+    if (flyCurrency('coins', Math.ceil(reward.coins / 60))) audio.coinBurst(8);
+    else bumpCurrency('coins');
+  }
+  if (reward.gems) {
+    if (flyCurrency('gems', Math.ceil(reward.gems / 5))) audio.coinBurst(6, true);
+    else bumpCurrency('gems');
+  }
   const visible = reward.coins || reward.gems || reward.cards?.length || reward.item;
   if (visible) {
     audio.coin();

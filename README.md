@@ -4,16 +4,21 @@ Juego de dardos 3D realista para **iOS y Android** (y navegador), con partidas c
 colección de dardos mejorables, cofres, arenas, clubes, pase de temporada, tutorial y monetización
 con anuncios y compras.
 
-| Inicio | Partida | Colección | Tienda | Eventos |
-|---|---|---|---|---|
-| ![](docs/capturas/1-inicio.png) | ![](docs/capturas/2-partida.png) | ![](docs/capturas/3-coleccion.png) | ![](docs/capturas/4-tienda.png) | ![](docs/capturas/5-eventos.png) |
+| Inicio | Partida | Colección | Tienda |
+|---|---|---|---|
+| ![](docs/capturas/1-inicio.png) | ![](docs/capturas/2-partida.png) | ![](docs/capturas/3-coleccion.png) | ![](docs/capturas/4-tienda.png) |
+
+| Eventos | Evento en vivo | Editor de personaje | Perfil |
+|---|---|---|---|
+| ![](docs/capturas/5-eventos.png) | ![](docs/capturas/6-evento-en-vivo.png) | ![](docs/capturas/7-personaje.png) | ![](docs/capturas/8-perfil.png) |
 
 ## Qué incluye
 
 **Jugabilidad**
 - Diana de sisal con medidas oficiales, araña metálica 3D, números, desgaste y armario de madera con pizarras.
 - Control táctil: **arrastra para apuntar**, mantén el dedo quieto para concentrarte (el círculo se encoge) y **desliza rápido hacia arriba** para lanzar. La fuerza y la dirección del gesto influyen en el tiro. Modo "Soltar (fácil)" para accesibilidad, ajuste de sensibilidad y modo zurdo.
-- Física de vuelo, vibración al clavarse, rebotes en los alambres, polvo de sisal, resaltado del segmento, cámara que celebra los 180, público y flashes.
+- Física de vuelo con estela, vibración al clavarse, rebotes en los alambres, polvo de sisal, chispas y onda expansiva en triples y bull, resaltado del segmento, **cámara lenta cinematográfica en el posible 180**, público y flashes.
+- Iluminación de cine: haces de luz volumétricos con polvo en suspensión, humo ambiente, anillo LED profesional en los estadios, materiales con barniz (clearcoat), gradación de color por arena, viñeta, grano y bloom.
 - Modos: **301 / 501** (doble para cerrar, legs), **Cricket**, **Alrededor del reloj**, práctica de cierres, lanzamiento libre, partida local de 2 a 4 jugadores, **online 1v1** y salas privadas.
 - IA con 7 niveles de dificultad calibrados (de ~20 a ~100 de media) y tabla de cierres profesional; pista de cierre en pantalla.
 - 7 arenas con escenarios propios: Pub de Barrio, Taberna del Puerto, Club Neón, Salón Dorado, Gran Arena, Campeonato Mundial y Olimpo de Leyendas.
@@ -23,7 +28,10 @@ con anuncios y compras.
 - 52 piezas coleccionables (cuerpos, cañas, aletas) en 4 rarezas, con estadísticas (Precisión, Estabilidad, Control) y mejoras con cartas + monedas; vista 3D giratoria.
 - Cofres con temporizador (4 huecos), cofre gratis cada 4 h, cofre por anuncio, apertura animada en 3D con cartas, **probabilidades visibles** (obligatorio en las tiendas).
 - Misiones diarias, recompensa diaria de 7 días, ruleta de la suerte, desafío diario con estrellas, logros, torneo eliminatorio de 8, pase de temporada (gratis + premium) de 35 niveles.
-- Editor de personaje 3D (piel, peinados, barba, gafas, gorros, ropa, dorsal), estilos de diana y emotes.
+- **Eventos en vivo** que rotan cada 3 días (Fiebre del Bull, Noche de Triples, Copa Relámpago, Maestros del Cricket, Reyes del Cierre, Locura del 180) con reglas de puntuación propias, entradas que se recargan, 10 hitos con premios y una aleta exclusiva.
+- **Avisos**: notificaciones del sistema (cofre listo, cofre gratis, recompensa diaria, nuevo evento, entradas recargadas) y avisos animados dentro del juego, con sonido.
+- **Personaje 3D de cuerpo entero** con editor por zonas y cámara que se acerca a lo que editas: complexión, forma de la cara, 8 estilos de ojos, cejas, bocas, narices, marcas (pecas, pintura de guerra…), 14 peinados, barbas, 9 prendas de arriba, pantalones, calzado, gafas, gorros y complementos. Animaciones de reposo, parpadeo, saludo, celebración y lanzamiento; podio con foco en el perfil y poses de ganador/perdedor en los resultados.
+- Estilos de diana y emotes.
 - Tutorial interactivo con entrenadora, guía del primer cofre y desbloqueo progresivo de funciones.
 
 **Social y online** (servidor incluido en `server/`)
@@ -52,6 +60,7 @@ docs/       Guía de publicación, privacidad, términos, fichas de tienda y cap
 ```
 
 Todo el arte (texturas, modelos 3D, iconos) y el sonido se generan por código: no hay recursos con licencias de terceros.
+El sonido usa Web Audio con reverberación de sala generada (pub, club o estadio), público con reacciones («¡oooh!», aplausos, silbidos), ambiente del local, música por capas y locutor.
 
 ## Desarrollo
 

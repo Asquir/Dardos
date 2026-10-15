@@ -158,7 +158,7 @@ export function ItemModal({ id }: { id: string }) {
           </div>
         ) : (
           <div class="muted" style={{ fontWeight: 800, textAlign: 'center' }}>
-            {def.exclusive ? 'Exclusivo del Pase de Temporada y ofertas especiales.' : `Puede salir en cofres a partir de la arena ${def.arena + 1}.`}
+            {def.exclusive ? (id.startsWith('f_ev_') ? 'Exclusivo de los eventos en vivo: completa todos los hitos para conseguirlo.' : 'Exclusivo del Pase de Temporada y ofertas especiales.') : `Puede salir en cofres a partir de la arena ${def.arena + 1}.`}
           </div>
         )}
         <div class="panel stats-panel" style={{ width: '100%', margin: 0 }}>

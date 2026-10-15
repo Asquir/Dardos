@@ -1,6 +1,6 @@
 // Perfil del jugador: avatar 3D, estadísticas, logros e historial.
 
-import { useState } from 'preact/hooks';
+import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { useStore, fmtNum } from '../../core/store';
 import { profileStore } from '../../meta/profile';
 import { avatarView } from '../../engine/avatar';
@@ -16,7 +16,25 @@ import { EMBLEMS } from './Social';
 
 export function Profile() {
   const p = useStore(profileStore);
-  const drag = useDragRotate(avatarView());
+  const v = avatarView();
+  const drag = useDragRotate(v);
+  const stage = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const measure = () => {
+      const r = stage.current?.getBoundingClientRect();
+      if (r) v.setRegion(r.top, r.height);
+    };
+    measure();
+    v.focus('full');
+    v.setDart(p.equipped);
+    window.addEventListener('resize', measure);
+    const t = setTimeout(() => v.play('wave'), 700);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener('resize', measure);
+      v.setDart(null);
+    };
+  }, []);
   const [tab, setTab] = useState<'stats' | 'ach' | 'hist'>('stats');
   const avg = p.stats.darts ? (p.stats.points / p.stats.darts) * 3 : 0;
   const winRate = p.stats.matches ? Math.round((p.stats.wins / p.stats.matches) * 100) : 0;
@@ -35,7 +53,7 @@ export function Profile() {
           ✏️ Editar avatar
         </button>
       </div>
-      <div style={{ height: '30vh', flex: 'none', touchAction: 'none' }} {...drag} />
+      <div ref={stage} style={{ height: '34vh', flex: 'none', touchAction: 'none' }} {...drag} />
       <div class="pad content" style={{ textAlign: 'center' }}>
         <button class="display outline" style={{ fontSize: '28px' }} onClick={() => openModal({ kind: 'nameEdit' })}>
           {p.name} ✏️

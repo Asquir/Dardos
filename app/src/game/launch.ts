@@ -3,8 +3,10 @@
 import { makeBot, rng } from '@shared/bot';
 import type { MatchConfig } from '@shared/rules';
 import type { AvatarConfig, DartLook, PublicProfile } from '@shared/protocol';
-import { ARENAS } from '../meta/arenas';
-import { BARRELS, FLIGHTS, SHAFTS, HAIRS, BEARDS, GLASSES, HATS, SHIRTS, SKIN_TONES, HAIR_COLORS, SHIRT_COLORS } from '../meta/catalog';
+import { ARENAS, arenaForTrophies } from '../meta/arenas';
+import { currentLiveEvent } from '../meta/liveEvents';
+import { useEventTicket } from '../meta/events';
+import { BARRELS, FLIGHTS, SHAFTS, HAIRS, BEARDS, GLASSES, HATS, SHIRTS, SKIN_TONES, HAIR_COLORS, SHIRT_COLORS, EYE_COLORS, FACES, EYE_STYLES, BROWS, MOUTHS, NOSES, MARKS, PANTS, PANTS_COLORS, SHOES, SHOE_COLORS, ACCESSORIES } from '../meta/catalog';
 import { profile, mutate } from '../meta/profile';
 import { startMatch, type MatchPlayer, type MatchSetup, type Match } from './match';
 import { todaysChallenge } from '../meta/progression';
@@ -12,17 +14,31 @@ import { todaysChallenge } from '../meta/progression';
 export function randomAvatar(seed: number): AvatarConfig {
   const r = rng(seed);
   const pick = <T,>(a: T[]) => a[Math.floor(r() * a.length)];
+  const id = (a: { id: string }[]) => pick(a).id;
+  const hair = id(HAIRS);
   return {
     skin: Math.floor(r() * SKIN_TONES.length),
-    hair: pick(HAIRS).id,
-    hairColor: Math.floor(r() * 7),
-    eyes: Math.floor(r() * 5),
-    beard: r() < 0.55 ? 'none' : pick(BEARDS).id,
-    glasses: r() < 0.75 ? 'none' : pick(GLASSES).id,
-    hat: r() < 0.7 ? 'none' : pick(HATS).id,
-    shirt: pick(SHIRTS).id,
+    hair,
+    hairColor: Math.floor(r() * (r() < 0.85 ? 8 : HAIR_COLORS.length)),
+    eyes: Math.floor(r() * EYE_COLORS.length),
+    beard: r() < 0.55 ? 'none' : id(BEARDS),
+    glasses: r() < 0.75 ? 'none' : id(GLASSES),
+    hat: r() < 0.7 ? 'none' : id(HATS),
+    shirt: id(SHIRTS),
     shirtColor: Math.floor(r() * SHIRT_COLORS.length),
     number: Math.floor(r() * 99) + 1,
+    body: Math.floor(r() * 4),
+    face: id(FACES),
+    eyeStyle: r() < 0.5 ? 'round' : id(EYE_STYLES),
+    brows: r() < 0.5 ? 'normal' : id(BROWS),
+    mouth: r() < 0.4 ? 'smile' : id(MOUTHS),
+    nose: id(NOSES),
+    marks: r() < 0.7 ? 'none' : id(MARKS),
+    pants: id(PANTS),
+    pantsColor: Math.floor(r() * PANTS_COLORS.length),
+    shoes: id(SHOES),
+    shoesColor: Math.floor(r() * SHOE_COLORS.length),
+    acc: r() < 0.6 ? 'none' : id(ACCESSORIES),
   };
 }
 void HAIR_COLORS;
@@ -128,6 +144,22 @@ export function tutorialSetup(): MatchSetup {
     starter: 0,
     assist: 0.6,
     title: 'Tutorial',
+  };
+}
+
+/** Partida del evento en vivo (gasta una entrada). El rival se ajusta a tu nivel real. */
+export function eventSetup(): MatchSetup | null {
+  const ev = currentLiveEvent();
+  if (!useEventTicket()) return null;
+  const p = profile();
+  const level = Math.min(arenaForTrophies(p.bestTrophies), ARENAS.length - 1);
+  return {
+    type: 'event',
+    config: ev.def.config,
+    arena: ev.def.arena,
+    players: [humanPlayer(), botPlayer(level)],
+    starter: Math.random() < 0.5 ? 0 : 1,
+    title: ev.def.name,
   };
 }
 

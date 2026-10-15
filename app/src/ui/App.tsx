@@ -27,12 +27,15 @@ import { Game } from './screens/Game';
 import { Matchmaking } from './screens/Matchmaking';
 import { Tournament } from './screens/Tournament';
 import { Onboarding } from './screens/Onboarding';
+import { LiveEvent } from './screens/LiveEvent';
 import { ModalHost } from './overlays/Modals';
 import { ChestOpen } from './overlays/ChestOpen';
 import { MockLayers } from './overlays/Mocks';
+import { BannerHost } from './components/Banners';
 import { upgradeInfo, dailyAvailable, freeChestsAvailable } from '../meta/economy';
 import { ALL_ITEMS } from '../meta/catalog';
-import { claimableAchievements } from '../meta/progression';
+import { claimableAchievements, FEATURE_LEVEL } from '../meta/progression';
+import { eventClaimable } from '../meta/events';
 
 const NAV: { id: ScreenName; label: string; Icon: typeof ShopIco }[] = [
   { id: 'shop', label: 'Tienda', Icon: ShopIco },
@@ -43,7 +46,7 @@ const NAV: { id: ScreenName; label: string; Icon: typeof ShopIco }[] = [
 ];
 
 const NO_CHROME: ScreenName[] = ['game', 'matchmaking', 'onboarding', 'avatar', 'profile', 'season'];
-const NO_NAV: ScreenName[] = [...NO_CHROME, 'profile', 'season', 'tournament'];
+const NO_NAV: ScreenName[] = [...NO_CHROME, 'profile', 'season', 'tournament', 'liveEvent'];
 
 export function App() {
   const s = useStore(ui);
@@ -89,6 +92,7 @@ export function App() {
       {m && s.screen === 'game' ? null : null}
       {s.chest && <ChestOpen />}
       <ModalHost />
+      <BannerHost />
       <div class="toast-wrap">
         {s.toasts.map((t) => (
           <div key={t.id} class={'toast ' + t.kind}>
@@ -127,6 +131,8 @@ function Screen({ name }: { name: ScreenName }) {
       return <Tournament />;
     case 'onboarding':
       return <Onboarding />;
+    case 'liveEvent':
+      return <LiveEvent />;
   }
 }
 
@@ -184,7 +190,7 @@ function Nav({ current }: { current: ScreenName }) {
   const upgrades = ALL_ITEMS.filter((i) => upgradeInfo(p, i.id).can).length;
   const shopBadge = p.shop.offers.some((o) => o.kind === 'free' && !o.bought) ? 1 : 0;
   const homeBadge = (dailyAvailable(p) ? 1 : 0) + p.missions.list.filter((m) => !m.claimed && m.progress >= m.target).length + (freeChestsAvailable(p) > 0 ? 1 : 0);
-  const eventsBadge = p.level >= 2 && p.challenge.day !== dayKey() ? 1 : 0;
+  const eventsBadge = p.level >= 2 ? (p.challenge.day !== dayKey() ? 1 : 0) + (p.level >= FEATURE_LEVEL.liveEvent ? eventClaimable() : 0) : 0;
   const socialBadge = claimableAchievements(p).length ? 0 : 0;
   const badges: Record<string, number> = { shop: shopBadge, collection: upgrades, home: current === 'home' ? 0 : homeBadge, events: eventsBadge, social: socialBadge };
   return (

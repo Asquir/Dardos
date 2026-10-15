@@ -13,6 +13,7 @@ import { closeModal } from '../state';
 import { useState } from 'preact/hooks';
 import { tournamentEntry } from './Tournament';
 import { Coin } from '../icons';
+import { LiveEventCard } from './LiveEvent';
 
 export function Events() {
   const p = useStore(profileStore);
@@ -26,6 +27,17 @@ export function Events() {
   return (
     <div class="screen dim">
       <div class="scroll grow content pad col" style={{ paddingTop: '6px', paddingBottom: '16px', gap: '12px' }}>
+        {p.level >= FEATURE_LEVEL.liveEvent ? (
+          <LiveEventCard />
+        ) : (
+          <button class="event-card locked" data-lock={`🔒 Nivel ${FEATURE_LEVEL.liveEvent}`} style={{ background: 'linear-gradient(135deg,#8a2be2,#ff3d6a)' }} onClick={() => toast(`Los eventos en vivo se desbloquean en el nivel ${FEATURE_LEVEL.liveEvent}`)}>
+            <div class="big-ic">⚡</div>
+            <div class="grow" style={{ textAlign: 'left' }}>
+              <h3 class="outline">Eventos en vivo</h3>
+              <p>Reglas especiales cada 3 días y objetos exclusivos.</p>
+            </div>
+          </button>
+        )}
         <button
           class={'event-card' + (tLocked ? ' locked' : '')}
           data-lock={`🔒 Nivel ${FEATURE_LEVEL.tournament}`}

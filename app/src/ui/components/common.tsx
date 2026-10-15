@@ -6,7 +6,7 @@ import type { AvatarConfig } from '@shared/protocol';
 import { Close, Coin, Gem, XpStar, Trophy, Lock } from '../icons';
 import { fmtNum, fmtTime, useNow } from '../../core/store';
 import { closeModal } from '../state';
-import { avatarPortrait } from '../../engine/avatar';
+import { avatarShot, type AvatarFrame, type AvatarPose } from '../../engine/avatar';
 import { itemThumbnail } from '../../engine/previewView';
 import { chestIcon } from '../../engine/chestView';
 import { flightDesignDataURL } from '../../engine/textures';
@@ -49,12 +49,13 @@ export function Progress({ value, max, label, color = '', style }: { value: numb
 }
 
 const avCache = new Map<string, string>();
-export function AvatarImg({ cfg, size = 128, class: cls, style }: { cfg: AvatarConfig; size?: number; class?: string; style?: JSX.CSSProperties }) {
-  const key = JSON.stringify(cfg) + size;
+export function AvatarImg({ cfg, size = 128, h, frame = 'head', pose = 'idle', class: cls, style }: { cfg: AvatarConfig; size?: number; h?: number; frame?: AvatarFrame; pose?: AvatarPose; class?: string; style?: JSX.CSSProperties }) {
+  const hh = h ?? size;
+  const key = JSON.stringify(cfg) + size + 'x' + hh + frame + pose;
   const src = useMemo(() => {
     let s = avCache.get(key);
     if (!s) {
-      s = avatarPortrait(cfg, size);
+      s = avatarShot(cfg, frame, size, hh, pose);
       avCache.set(key, s);
     }
     return s;

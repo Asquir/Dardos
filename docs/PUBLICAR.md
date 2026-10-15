@@ -200,5 +200,6 @@ Necesitas un Mac con Xcode 16 o superior (o un servicio en la nube como Codemagi
 - **Temporadas**: cada 30 días empieza una nueva automáticamente (ver `meta/progression.ts`). Cambia las recompensas exclusivas de cada temporada para dar motivos para comprar el pase.
 - **Analítica**: añade Firebase Analytics o similar para medir retención (D1/D7/D30) y dónde abandonan los jugadores. Ajusta la economía (`meta/arenas.ts`, `meta/chests.ts`, `meta/catalog.ts`).
 - **Eventos**: los desafíos diarios rotan solos; puedes añadir más en `CHALLENGES`.
-- **Notificaciones push** (cofre listo, recompensa diaria): se pueden añadir con `@capacitor/local-notifications` sin servidor.
+- **Eventos en vivo**: rotan solos cada 3 días (`meta/liveEvents.ts`). Para añadir uno nuevo, define sus reglas de puntuación, su arena y su aleta exclusiva (en `catalog.ts` y su diseño en `engine/textures.ts`).
+- **Notificaciones**: ya incluidas con `@capacitor/local-notifications` (sin servidor). El juego pide permiso con una explicación propia la primera vez que empiezas a abrir un cofre. En Android 13+ se usa el permiso `POST_NOTIFICATIONS` (ya en el manifiesto) y el icono `ic_stat_diana`. Si más adelante quieres notificaciones remotas (campañas), añade Firebase Cloud Messaging / APNs.
 - **Escalar el servidor**: con miles de jugadores simultáneos, cambia `server/src/db.ts` por PostgreSQL/Redis manteniendo la misma interfaz.

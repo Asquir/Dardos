@@ -12,14 +12,23 @@ const URL = process.argv[2] || 'http://127.0.0.1:5173/';
 const OUT = path.join(__dirname, '..', 'docs', 'capturas');
 fs.mkdirSync(OUT, { recursive: true });
 
+// misma rotación que app/src/meta/liveEvents.ts
+function liveKey() {
+  const ids = ['bull_fever', 'treble_night', 'lightning_cup', 'cricket_masters', 'checkout_kings', 'max_madness'];
+  const n = Math.floor((Date.now() - Date.UTC(2026, 0, 2, 12)) / (3 * 86400e3));
+  return `${ids[((n % ids.length) + ids.length) % ids.length]}_${n}`;
+}
+
 const profile = (extra = {}) => ({
   v: 1, id: 'demo0001', name: 'TúMismo', nameSet: true, country: 'ES',
-  avatar: { skin: 2, hair: 'spiky', hairColor: 2, eyes: 1, beard: 'stubble', glasses: 'none', hat: 'none', shirt: 'jersey', shirtColor: 1, number: 180 % 99 },
-  coins: 12850, gems: 640, xp: 300, level: 14, trophies: 1340, bestTrophies: 1340, selectedArena: 3,
+  avatar: { skin: 3, hair: 'quiff', hairColor: 1, eyes: 2, beard: 'stubble', glasses: 'none', hat: 'none', shirt: 'champion', shirtColor: 10, number: 18, body: 2, face: 'square', eyeStyle: 'sharp', brows: 'thick', mouth: 'grin', nose: 'button', marks: 'none', pants: 'jeans', pantsColor: 1, shoes: 'hightops', shoesColor: 0, acc: 'chain' },
+  coins: 12850, gems: 640, xp: 300, level: 21, trophies: 1340, bestTrophies: 1340, selectedArena: 3,
   items: { b_brass: { level: 5, cards: 3 }, b_t90: { level: 4, cards: 12 }, b_dragon: { level: 2, cards: 1 }, b_gold: { level: 3, cards: 4 }, s_nylon_w: { level: 4, cards: 2 }, s_carbon: { level: 3, cards: 9 }, s_gold: { level: 1, cards: 0 }, f_red: { level: 4, cards: 1 }, f_flames: { level: 3, cards: 6 }, f_galaxy: { level: 2, cards: 3 }, f_spain: { level: 3, cards: 8 }, f_dragon: { level: 1, cards: 0 }, b_copper: { level: 3, cards: 2 }, b_sapphire: { level: 2, cards: 5 } },
   equipped: { barrel: 'b_dragon', shaft: 's_gold', flight: 'f_dragon' },
-  boardSkin: 'classic', ownedBoards: ['classic'], emotes: ['gg', 'nice', 'oops', 'go'], ownedEmotes: ['gg', 'nice', 'oops', 'go'], ownedAvatar: [],
-  chests: [{ type: 'gold', arena: 3, readyAt: null }, { type: 'epic', arena: 3, readyAt: Date.now() + 3 * 3600e3 }, { type: 'silver', arena: 3, readyAt: 0 }, null],
+  boardSkin: 'classic', ownedBoards: ['classic'], emotes: ['gg', 'nice', 'oops', 'go'], ownedEmotes: ['gg', 'nice', 'oops', 'go'], ownedAvatar: ['hair:quiff', 'shirt:champion', 'eyeStyle:sharp', 'shoes:hightops', 'acc:chain', 'hair:spiky', 'shirt:hoodie', 'glasses:sun'],
+  chests: [{ type: 'gold', arena: 3, readyAt: null }, { type: 'epic', arena: 3, readyAt: Date.now() + 3 * 3600e3 }, { type: 'silver', arena: 3, readyAt: null }, null],
+  seenEvent: liveKey(),
+  liveEvent: { key: liveKey(), points: 690, claimed: [0, 1, 2, 3], tickets: 4, ticketAt: Date.now() - 600e3, adTickets: { day: '', count: 0 }, played: 9 },
   winCycle: 4, freeChestAt: Date.now() - 1000, adChests: { day: '', count: 0 },
   tutorial: { done: true, tips: [] }, createdAt: Date.now() - 2 * 86400e3, lastLogin: Date.now(),
   ...extra,
@@ -33,11 +42,18 @@ const profile = (extra = {}) => ({
   const ready = () => page.waitForFunction(() => !document.getElementById('splash'), null, { timeout: 180000 });
   const shot = async (name, wait = 2500) => {
     await page.waitForTimeout(wait);
-    await page.screenshot({ path: path.join(OUT, name + '.png') });
+    await page.screenshot({ path: path.join(OUT, name + '.png'), timeout: 120000 });
     console.log('captura', name);
   };
   await page.goto(URL + '?q=high');
   await ready();
+  if (process.env.ONLY_AVATAR) {
+    await page.evaluate(() => window.__diana.go('avatar'));
+    await shot('7-personaje', 7000);
+    await page.evaluate(() => window.__diana.go('profile'));
+    await shot('8-perfil', 6000);
+    return b.close();
+  }
   if (!process.env.ONLY_GAME) await shot('1-inicio', 4000);
   // partida: lanzamientos de demostración con celebración de 180
   await page.evaluate(async () => {
@@ -67,5 +83,11 @@ const profile = (extra = {}) => ({
   await shot('4-tienda', 3000);
   await page.evaluate(() => window.__diana.go('events'));
   await shot('5-eventos', 3000);
+  await page.evaluate(() => window.__diana.go('liveEvent'));
+  await shot('6-evento-en-vivo', 3000);
+  await page.evaluate(() => window.__diana.go('avatar'));
+  await shot('7-personaje', 7000);
+  await page.evaluate(() => window.__diana.go('profile'));
+  await shot('8-perfil', 6000);
   await b.close();
 })();

@@ -29,13 +29,16 @@ Reta a jugadores reales en partidas 1 contra 1, crea salas privadas para jugar c
 Colecciona más de 50 cuerpos, cañas y aletas: tungsteno, oro, fibra de carbono, dragones de fuego… Mejóralos para ganar precisión, estabilidad y control.
 
 **🎁 COFRES, RECOMPENSAS Y PASE DE TEMPORADA**
-Gana cofres en cada victoria, abre uno gratis cada 4 horas, gira la ruleta, completa misiones diarias y desbloquea premios exclusivos en el pase de temporada.
+Gana cofres en cada victoria, abre uno gratis cada 4 horas, gira la ruleta, completa misiones diarias y desbloquea premios exclusivos en el pase de temporada. Te avisamos cuando tu cofre esté listo.
 
-**😎 TU ESTILO**
-Personaliza tu jugador: peinados, barbas, gafas, gorros, camisetas con tu dorsal, dianas especiales y emotes para picar a tu rival.
+**⚡ EVENTOS EN VIVO**
+Cada 3 días, un evento nuevo con reglas especiales: Fiebre del Bull, Noche de Triples, Locura del 180… Suma puntos, supera hitos y llévate aletas exclusivas que no salen en ningún cofre.
+
+**😎 CREA TU PERSONAJE**
+Diseña tu jugador de cuerpo entero en 3D: cara, ojos, cejas, boca, peinados, barbas, complexión, camisetas con tu dorsal, pantalones, zapatillas, gafas, gorros y complementos. Celebra tus victorias en el podio.
 
 **✨ HECHO PARA ENGANCHAR**
-Gráficos 3D con iluminación real, ¡180! con público, locutor, vibración y efectos espectaculares. Tutorial para aprender en un minuto.
+Gráficos 3D con iluminación de cine, cámara lenta en el posible 180, chispas en cada triple, público que reacciona, locutor, sonido envolvente y vibración. Tutorial para aprender en un minuto.
 
 Diana Legends es gratis y contiene compras opcionales dentro de la aplicación y anuncios. Los cofres muestran sus probabilidades en el juego.
 

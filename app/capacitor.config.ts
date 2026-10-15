@@ -16,6 +16,7 @@ const config: CapacitorConfig = {
       androidScaleType: 'CENTER_CROP',
     },
     StatusBar: { style: 'DARK', overlaysWebView: true },
+    LocalNotifications: { smallIcon: 'ic_stat_diana', iconColor: '#FFC21A' },
   },
 };
 

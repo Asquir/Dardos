@@ -4,6 +4,7 @@ import type { AvatarConfig, DartLook } from '@shared/protocol';
 import { Store } from '../core/store';
 import { loadJSON, saveJSON } from '../services/storage';
 import type { ChestType } from './chests';
+import type { LiveEventState } from './liveEvents';
 
 export interface ChestSlot {
   type: ChestType;
@@ -66,6 +67,8 @@ export interface Settings {
   language: 'es' | 'en';
   serverUrl: string;
   personalizedAds: boolean | null;
+  /** null = todavía no se ha preguntado */
+  notifications: boolean | null;
 }
 
 export interface Profile {
@@ -135,6 +138,9 @@ export interface Profile {
   tournament: TournamentState | null;
   history: MatchSummary[];
   challenge: { day: string; best: number; claimed: number };
+  liveEvent: LiveEventState | null;
+  /** clave del último evento en vivo anunciado */
+  seenEvent: string;
 }
 
 export const PROFILE_KEY = 'diana_profile_v1';
@@ -201,6 +207,7 @@ export function defaultProfile(): Profile {
       language: 'es',
       serverUrl: (import.meta.env.VITE_SERVER_URL as string | undefined) ?? '',
       personalizedAds: null,
+      notifications: null,
     },
     tutorial: { done: false, tips: [] },
     friends: [],
@@ -212,6 +219,8 @@ export function defaultProfile(): Profile {
     tournament: null,
     history: [],
     challenge: { day: '', best: 0, claimed: 0 },
+    liveEvent: null,
+    seenEvent: '',
   };
 }
 

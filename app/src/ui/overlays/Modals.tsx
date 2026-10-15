@@ -45,6 +45,8 @@ import { net } from '../../services/net';
 import { restorePurchases } from '../purchase';
 import { cleanName } from '@shared/text';
 import { haptics as hap } from '../../services/haptics';
+import { notify } from '../../services/notify';
+import { maybeAskNotifications, enableNotifications, syncNotifications } from '../alerts';
 
 export function ModalHost() {
   const s = useStore(ui);
@@ -123,6 +125,8 @@ function ModalView({ m }: { m: ModalSpec }) {
       return <ClubCreateModal />;
     case 'freeChest':
       return <FreeChestModal />;
+    case 'notifyAsk':
+      return <NotifyAskModal />;
     default:
       return null;
   }
@@ -369,6 +373,7 @@ function ChestSlotModal({ idx }: { idx: number }) {
                 if (startUnlock(idx)) {
                   audio.click();
                   closeModal();
+                  maybeAskNotifications();
                 }
               }}
             >
@@ -581,6 +586,43 @@ function NameModal() {
   );
 }
 
+// ------------------------------------------------------------------ permiso de avisos
+
+function NotifyAskModal() {
+  const answer = (yes: boolean) => {
+    audio.click();
+    closeModal();
+    if (yes) void enableNotifications().then((ok) => toast(ok ? '¡Te avisaremos cuando esté listo!' : 'Puedes activarlos en Ajustes cuando quieras', ok ? 'good' : 'info'));
+    else {
+      mutate((p) => void (p.settings.notifications = false));
+      toast('Puedes activar los avisos en Ajustes', 'info');
+    }
+  };
+  return (
+    <Modal noClose>
+      <div class="notify-ask">
+        <div class="bell">
+          <span>🔔</span>
+          <i />
+        </div>
+        <h2 class="outline">¿Te avisamos?</h2>
+        <p>Recibe un aviso cuando tu <b>cofre esté listo</b>, tengas un <b>cofre gratis</b> o empiece un <b>evento</b>.</p>
+        <ul>
+          <li>🎁 Cofres listos para abrir</li>
+          <li>⚡ Eventos con premios exclusivos</li>
+          <li>📅 Tu recompensa diaria</li>
+        </ul>
+        <button class="btn block shine" onClick={() => answer(true)}>
+          ¡Sí, avísame!
+        </button>
+        <button class="btn block gray" onClick={() => answer(false)}>
+          Ahora no
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 // ------------------------------------------------------------------ ajustes
 
 function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
@@ -610,6 +652,25 @@ function SettingsModal() {
       {row('Música', <input type="range" min={0} max={1} step={0.05} value={s.music} style={{ width: '45%' }} onInput={(e) => set('music', +(e.target as HTMLInputElement).value)} />)}
       {row('Voz del locutor', <Toggle on={s.voice} onChange={(v) => set('voice', v)} />)}
       {row('Vibración', <Toggle on={s.vibration} onChange={(v) => set('vibration', v)} />)}
+      {row(
+        'Notificaciones',
+        <Toggle
+          on={s.notifications === true}
+          onChange={(v) => {
+            if (!v) {
+              set('notifications', false);
+              syncNotifications(true);
+              return;
+            }
+            if (!notify.supported) {
+              set('notifications', true);
+              toast('Los avisos llegan en la app del móvil', 'info');
+              return;
+            }
+            void enableNotifications().then((ok) => !ok && toast('Activa los avisos en los ajustes del teléfono', 'bad'));
+          }}
+        />,
+      )}
       {row('Ayuda de cierres', <Toggle on={s.showCheckout} onChange={(v) => set('showCheckout', v)} />)}
       {row('Zurdo', <Toggle on={s.leftHanded} onChange={(v) => set('leftHanded', v)} />)}
       <div style={{ padding: '9px 0', borderBottom: '1px solid var(--stroke)' }}>

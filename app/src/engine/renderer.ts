@@ -18,15 +18,49 @@ export interface View {
   resize?(w: number, h: number): void;
   bloom?: { strength: number; radius: number; threshold: number };
   exposure?: number;
+  /** gradación de color (se lee en cada fotograma, así que se puede animar) */
+  grade?: Partial<Grade>;
   onActivate?(): void;
   onDeactivate?(): void;
 }
 
-const VignetteShader = {
+export interface Grade {
+  /** oscurecimiento de las esquinas */
+  vignette: number;
+  saturation: number;
+  contrast: number;
+  /** tinte de sombras y de luces (estilo cine) */
+  shadows: [number, number, number];
+  highlights: [number, number, number];
+  grain: number;
+  /** aberración cromática en los bordes */
+  aberration: number;
+}
+
+const DEFAULT_GRADE: Grade = {
+  vignette: 0.42,
+  saturation: 1.06,
+  contrast: 1.05,
+  shadows: [-0.012, 0.0, 0.02],
+  highlights: [0.018, 0.008, -0.012],
+  grain: 0.02,
+  aberration: 0.25,
+};
+
+// Se aplica después del mapeo de tonos (espacio de pantalla).
+const GradeShader = {
   uniforms: {
     tDiffuse: { value: null as THREE.Texture | null },
-    strength: { value: 0.45 },
+    vignette: { value: 0.42 },
     flash: { value: 0 },
+    saturation: { value: 1 },
+    contrast: { value: 1 },
+    shadowTint: { value: new THREE.Vector3() },
+    highTint: { value: new THREE.Vector3() },
+    grain: { value: 0 },
+    aberration: { value: 0 },
+    time: { value: 0 },
+    res: { value: new THREE.Vector2(1, 1) },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -34,16 +68,39 @@ const VignetteShader = {
   `,
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse;
-    uniform float strength;
+    uniform float vignette;
     uniform float flash;
+    uniform float saturation;
+    uniform float contrast;
+    uniform vec3 shadowTint;
+    uniform vec3 highTint;
+    uniform float grain;
+    uniform float aberration;
+    uniform float time;
+    uniform vec2 res;
     varying vec2 vUv;
     void main() {
-      vec4 c = texture2D(tDiffuse, vUv);
       vec2 d = vUv - 0.5;
-      float v = smoothstep(0.85, 0.2, length(d * vec2(1.0, 0.85)));
-      c.rgb *= mix(1.0 - strength, 1.0, v);
-      c.rgb += flash * vec3(1.0, 0.95, 0.85);
-      gl_FragColor = c;
+      float r2 = dot(d, d);
+      vec3 c;
+      if (aberration > 0.0) {
+        vec2 off = d * r2 * aberration * 0.06;
+        c.r = texture2D(tDiffuse, vUv + off).r;
+        c.g = texture2D(tDiffuse, vUv).g;
+        c.b = texture2D(tDiffuse, vUv - off).b;
+      } else {
+        c = texture2D(tDiffuse, vUv).rgb;
+      }
+      float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+      c = mix(vec3(l), c, saturation);
+      c = (c - 0.5) * contrast + 0.5;
+      c += shadowTint * (1.0 - smoothstep(0.0, 0.55, l)) + highTint * smoothstep(0.45, 1.0, l);
+      float v = smoothstep(0.86, 0.18, length(d * vec2(1.0, 0.82)));
+      c *= mix(1.0 - vignette, 1.0, v);
+      c += flash * vec3(1.0, 0.95, 0.85);
+      float n = fract(sin(dot(vUv * res + fract(time) * 97.0, vec2(12.9898, 78.233))) * 43758.5453);
+      c += (n - 0.5) * grain;
+      gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
     }
   `,
 };
@@ -54,7 +111,9 @@ class Engine {
   composer: EffectComposer | null = null;
   renderPass: RenderPass | null = null;
   bloom: UnrealBloomPass | null = null;
-  vignette: ShaderPass | null = null;
+  grade: ShaderPass | null = null;
+  /** cámara lenta (1 = normal) */
+  timeScale = 1;
   envMap: THREE.Texture | null = null;
   quality: Quality = 'high';
   view: View | null = null;
@@ -110,9 +169,9 @@ class Engine {
     this.composer.addPass(this.renderPass);
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.35, 0.55, 0.88);
     this.composer.addPass(this.bloom);
-    this.vignette = new ShaderPass(VignetteShader);
-    this.composer.addPass(this.vignette);
     this.composer.addPass(new OutputPass());
+    this.grade = new ShaderPass(GradeShader);
+    this.composer.addPass(this.grade);
   }
 
   pixelRatio() {
@@ -175,6 +234,22 @@ class Engine {
     v.onActivate?.();
   }
 
+  private applyGrade(seconds: number) {
+    const u = this.grade!.uniforms;
+    const g = { ...DEFAULT_GRADE, ...(this.view?.grade ?? {}) };
+    const hq = this.quality === 'high';
+    u.flash.value = this.flash;
+    u.vignette.value = g.vignette;
+    u.saturation.value = g.saturation;
+    u.contrast.value = g.contrast;
+    u.shadowTint.value.set(...g.shadows);
+    u.highTint.value.set(...g.highlights);
+    u.grain.value = hq ? g.grain : g.grain * 0.5;
+    u.aberration.value = hq ? g.aberration : 0;
+    u.time.value = seconds;
+    u.res.value.set(this.width, this.height);
+  }
+
   /** Destello blanco breve en pantalla completa (180, cofres...). */
   doFlash(amount = 0.6) {
     this.flash = Math.max(this.flash, amount);
@@ -189,11 +264,12 @@ class Engine {
       const dt = Math.min(0.05, (now - this.last) / 1000);
       this.last = now;
       if (this.paused || !this.view) return;
-      this.time += dt;
-      this.view.update(this.time, dt);
+      const sdt = dt * this.timeScale;
+      this.time += sdt;
+      this.view.update(this.time, sdt);
       this.flash = Math.max(0, this.flash - dt * 2.2);
       if (this.composer && this.renderPass) {
-        if (this.vignette) this.vignette.uniforms.flash.value = this.flash;
+        if (this.grade) this.applyGrade(now / 1000);
         this.composer.render(dt);
       } else {
         this.renderer.render(this.view.scene, this.view.camera);

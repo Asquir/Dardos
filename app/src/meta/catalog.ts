@@ -1,5 +1,7 @@
 // Catálogo de objetos coleccionables: cuerpos (barriles), cañas, aletas, avatar, emotes, dianas.
 
+import type { AvatarConfig } from '@shared/protocol';
+
 export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';
 export type Slot = 'barrel' | 'shaft' | 'flight';
 
@@ -123,6 +125,13 @@ export const FLIGHTS: FlightDef[] = [
   { id: 'f_dragon', slot: 'flight', name: 'Dragón Imperial', rarity: 'legendary', arena: 5, stats: st(9, 28, 9), shape: 'fantail', design: 'dragon' },
   { id: 'f_legend', slot: 'flight', name: 'Leyenda Solar', rarity: 'legendary', arena: 6, stats: st(10, 29, 9), shape: 'kite', design: 'legend' },
   { id: 'f_season1', slot: 'flight', name: 'Llama Dorada (T1)', rarity: 'legendary', arena: 0, stats: st(10, 28, 10), shape: 'fantail', design: 'season1', exclusive: true },
+  // exclusivas de eventos en vivo
+  { id: 'f_ev_bull', slot: 'flight', name: 'Ojo de Toro', rarity: 'legendary', arena: 0, stats: st(11, 27, 10), shape: 'pear', design: 'ev_bull', exclusive: true },
+  { id: 'f_ev_neon3', slot: 'flight', name: 'Triple Neón', rarity: 'legendary', arena: 0, stats: st(10, 28, 10), shape: 'kite', design: 'ev_neon3', exclusive: true },
+  { id: 'f_ev_thunder', slot: 'flight', name: 'Tormenta', rarity: 'legendary', arena: 0, stats: st(10, 27, 11), shape: 'slim', design: 'ev_thunder', exclusive: true },
+  { id: 'f_ev_cricket', slot: 'flight', name: 'Rey del Cricket', rarity: 'legendary', arena: 0, stats: st(10, 28, 10), shape: 'standard', design: 'ev_cricket', exclusive: true },
+  { id: 'f_ev_crown', slot: 'flight', name: 'Corona Dorada', rarity: 'legendary', arena: 0, stats: st(11, 27, 11), shape: 'fantail', design: 'ev_crown', exclusive: true },
+  { id: 'f_ev_inferno', slot: 'flight', name: 'Infierno 180', rarity: 'legendary', arena: 0, stats: st(10, 29, 10), shape: 'fantail', design: 'ev_inferno', exclusive: true },
 ];
 
 export const ALL_ITEMS: ItemDef[] = [...BARRELS, ...SHAFTS, ...FLIGHTS];
@@ -176,22 +185,84 @@ export interface AvatarPart {
   level?: number; // nivel de jugador necesario
 }
 
-export const SKIN_TONES = ['#ffe0c7', '#f5c9a6', '#e3a77f', '#c98a5e', '#9b6440', '#6e4428', '#4a2c1a'];
-export const HAIR_COLORS = ['#1b1612', '#3b2516', '#6b4226', '#a8692e', '#d9a441', '#efd9a0', '#b03a2e', '#e7e7e7', '#3a6bff', '#ff4fa3', '#36d66b'];
-export const SHIRT_COLORS = ['#e8193c', '#1f6dff', '#11a86a', '#ffb31a', '#7a2cff', '#111111', '#f3f3f3', '#ff6a00', '#00c2d6', '#ff4fa3'];
-export const EYE_COLORS = ['#3b2516', '#2e6bd6', '#2f8a4a', '#6b6b6b', '#8a5a2a'];
+export const SKIN_TONES = ['#ffe6d2', '#ffd9bd', '#f5c9a6', '#e8b48c', '#d79a6c', '#c08355', '#9b6440', '#7a4a2c', '#5a3420', '#3e2416'];
+export const HAIR_COLORS = ['#1b1612', '#3b2516', '#6b4226', '#a8692e', '#d9a441', '#efd9a0', '#b03a2e', '#e7e7e7', '#3a6bff', '#ff4fa3', '#36d66b', '#9b5cff'];
+export const SHIRT_COLORS = ['#e8193c', '#1f6dff', '#11a86a', '#ffb31a', '#7a2cff', '#111111', '#f3f3f3', '#ff6a00', '#00c2d6', '#ff4fa3', '#2a3b8f', '#8b1e3f'];
+export const EYE_COLORS = ['#3b2516', '#6b4226', '#2e6bd6', '#5fa8ff', '#2f8a4a', '#7dbf5a', '#6b6b6b', '#8a5a2a', '#8f4fd6'];
+export const PANTS_COLORS = ['#2f5b9a', '#1f2f52', '#141518', '#b9a27a', '#6b6f78', '#e9e6df', '#8b1e3f', '#2f6b3f', '#e8193c', '#ff9d00'];
+export const SHOE_COLORS = ['#f4f4f4', '#141414', '#e8193c', '#1f6dff', '#ffb31a', '#11a86a', '#7a2cff', '#ff4fa3', '#8a5a2b', '#00e5ff'];
 
+export const BODIES: AvatarPart[] = [
+  { id: '0', name: 'Delgado' },
+  { id: '1', name: 'Normal' },
+  { id: '2', name: 'Atlético' },
+  { id: '3', name: 'Robusto' },
+];
+export const FACES: AvatarPart[] = [
+  { id: 'round', name: 'Redonda' },
+  { id: 'oval', name: 'Ovalada' },
+  { id: 'square', name: 'Cuadrada' },
+  { id: 'long', name: 'Alargada' },
+];
+export const EYE_STYLES: AvatarPart[] = [
+  { id: 'round', name: 'Redondos' },
+  { id: 'almond', name: 'Almendra' },
+  { id: 'lashes', name: 'Pestañas' },
+  { id: 'sleepy', name: 'Tranquilos' },
+  { id: 'sharp', name: 'Decididos', price: { coins: 300 } },
+  { id: 'big', name: 'Grandes', price: { coins: 300 } },
+  { id: 'joy', name: 'Felices', price: { gems: 30 } },
+  { id: 'star', name: 'Estrella', price: { gems: 80 }, level: 10 },
+];
+export const BROWS: AvatarPart[] = [
+  { id: 'normal', name: 'Normales' },
+  { id: 'thick', name: 'Gruesas' },
+  { id: 'thin', name: 'Finas' },
+  { id: 'arched', name: 'Arqueadas' },
+  { id: 'angry', name: 'Serias', price: { coins: 150 } },
+  { id: 'uni', name: 'Uniceja', price: { coins: 200 } },
+  { id: 'none', name: 'Sin cejas' },
+];
+export const MOUTHS: AvatarPart[] = [
+  { id: 'smile', name: 'Sonrisa' },
+  { id: 'grin', name: 'Carcajada' },
+  { id: 'neutral', name: 'Neutra' },
+  { id: 'teeth', name: 'Dientes' },
+  { id: 'smirk', name: 'Pícara', price: { coins: 200 } },
+  { id: 'open', name: '¡Oh!', price: { coins: 200 } },
+  { id: 'tongue', name: 'Lengua', price: { gems: 20 } },
+  { id: 'gold', name: 'Diente de oro', price: { gems: 70 }, level: 8 },
+];
+export const NOSES: AvatarPart[] = [
+  { id: 'button', name: 'Botón' },
+  { id: 'round', name: 'Redonda' },
+  { id: 'long', name: 'Larga' },
+  { id: 'pointy', name: 'Respingona' },
+];
+export const MARKS: AvatarPart[] = [
+  { id: 'none', name: 'Nada' },
+  { id: 'blush', name: 'Rubor' },
+  { id: 'freckles', name: 'Pecas', price: { coins: 200 } },
+  { id: 'scar', name: 'Cicatriz', price: { coins: 400 } },
+  { id: 'paint', name: 'Pintura de guerra', price: { gems: 40 }, level: 7 },
+  { id: 'flag', name: 'Bandera', price: { gems: 40 } },
+  { id: 'target', name: 'Diana tatuada', price: { gems: 90 }, level: 14 },
+];
 export const HAIRS: AvatarPart[] = [
   { id: 'short', name: 'Corto' },
   { id: 'buzz', name: 'Rapado' },
   { id: 'bald', name: 'Calvo' },
+  { id: 'side', name: 'Raya al lado' },
   { id: 'spiky', name: 'Pinchos', price: { coins: 300 } },
   { id: 'long', name: 'Largo' },
+  { id: 'bob', name: 'Media melena' },
   { id: 'bun', name: 'Moño', price: { coins: 300 } },
   { id: 'mohawk', name: 'Cresta', price: { gems: 30 } },
   { id: 'curly', name: 'Rizado', price: { coins: 500 } },
   { id: 'ponytail', name: 'Coleta' },
+  { id: 'braids', name: 'Trenzas', price: { coins: 600 } },
   { id: 'afro', name: 'Afro', price: { gems: 40 } },
+  { id: 'quiff', name: 'Tupé', price: { gems: 50 }, level: 9 },
 ];
 export const BEARDS: AvatarPart[] = [
   { id: 'none', name: 'Sin barba' },
@@ -206,23 +277,75 @@ export const GLASSES: AvatarPart[] = [
   { id: 'round', name: 'Redondas', price: { coins: 250 } },
   { id: 'square', name: 'Pasta', price: { coins: 250 } },
   { id: 'sun', name: 'De sol', price: { gems: 25 } },
+  { id: 'aviator', name: 'Aviador', price: { gems: 45 }, level: 5 },
   { id: 'pro', name: 'Deportivas Pro', price: { gems: 60 }, level: 10 },
 ];
 export const HATS: AvatarPart[] = [
   { id: 'none', name: 'Sin gorro' },
   { id: 'cap', name: 'Gorra', price: { coins: 400 } },
+  { id: 'backcap', name: 'Gorra al revés', price: { coins: 450 } },
   { id: 'beanie', name: 'Gorro de lana', price: { coins: 400 } },
+  { id: 'headband', name: 'Cinta', price: { coins: 250 } },
+  { id: 'fedora', name: 'Sombrero', price: { gems: 50 }, level: 6 },
   { id: 'cowboy', name: 'Vaquero', price: { gems: 60 }, level: 6 },
   { id: 'crown', name: 'Corona', price: { gems: 200 }, level: 15 },
-  { id: 'headband', name: 'Cinta', price: { coins: 250 } },
 ];
 export const SHIRTS: AvatarPart[] = [
   { id: 'polo', name: 'Polo' },
+  { id: 'tee', name: 'Camiseta' },
   { id: 'jersey', name: 'Camiseta Pro' },
+  { id: 'tank', name: 'Tirantes', price: { coins: 300 } },
   { id: 'hoodie', name: 'Sudadera', price: { coins: 500 } },
   { id: 'hawaii', name: 'Hawaiana', price: { gems: 40 } },
+  { id: 'jacket', name: 'Chupa de cuero', price: { gems: 70 }, level: 9 },
   { id: 'suit', name: 'Traje', price: { gems: 90 }, level: 12 },
+  { id: 'champion', name: 'Campeón', price: { gems: 150 }, level: 18 },
 ];
+export const PANTS: AvatarPart[] = [
+  { id: 'jeans', name: 'Vaqueros' },
+  { id: 'chinos', name: 'Chinos' },
+  { id: 'shorts', name: 'Bermudas' },
+  { id: 'track', name: 'Chándal', price: { coins: 300 } },
+  { id: 'cargo', name: 'Cargo', price: { coins: 400 } },
+  { id: 'suit', name: 'De vestir', price: { gems: 30 } },
+];
+export const SHOES: AvatarPart[] = [
+  { id: 'sneakers', name: 'Deportivas' },
+  { id: 'classic', name: 'Zapatos' },
+  { id: 'hightops', name: 'Botines', price: { coins: 350 } },
+  { id: 'boots', name: 'Botas', price: { coins: 450 } },
+  { id: 'runner', name: 'Running', price: { gems: 30 } },
+  { id: 'neon', name: 'Neón', price: { gems: 60 }, level: 7 },
+];
+export const ACCESSORIES: AvatarPart[] = [
+  { id: 'none', name: 'Nada' },
+  { id: 'watch', name: 'Reloj', price: { coins: 300 } },
+  { id: 'chain', name: 'Cadena', price: { coins: 500 } },
+  { id: 'earring', name: 'Pendiente', price: { coins: 250 } },
+  { id: 'headphones', name: 'Cascos', price: { gems: 40 } },
+  { id: 'scarf', name: 'Bufanda', price: { coins: 400 } },
+  { id: 'medal', name: 'Medalla', price: { gems: 80 }, level: 12 },
+  { id: 'wristband', name: 'Muñequeras', price: { coins: 200 } },
+];
+
+/** Rellena los campos nuevos del avatar en perfiles antiguos. */
+export function normAvatar(a: AvatarConfig): Required<AvatarConfig> {
+  return {
+    body: 1,
+    face: 'round',
+    eyeStyle: 'round',
+    brows: 'normal',
+    mouth: 'smile',
+    nose: 'button',
+    marks: 'none',
+    pants: 'jeans',
+    pantsColor: 0,
+    shoes: 'sneakers',
+    shoesColor: 0,
+    acc: 'none',
+    ...a,
+  } as Required<AvatarConfig>;
+}
 
 export function partPriceKey(cat: string, id: string) {
   return `${cat}:${id}`;

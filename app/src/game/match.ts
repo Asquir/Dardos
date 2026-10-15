@@ -16,6 +16,8 @@ import { ARENAS, arenaForTrophies } from '../meta/arenas';
 import { addXp, awardWinChest, dartStats, track, noteMatchForAds, addSeasonXp } from '../meta/economy';
 import type { ChestType } from '../meta/chests';
 import type { ChallengeDef } from '../meta/progression';
+import { currentLiveEvent, scoreEventMatch } from '../meta/liveEvents';
+import { addEventPoints } from '../meta/events';
 import { EMOTES } from '../meta/catalog';
 
 export type PlayerKind = 'human' | 'bot' | 'remote';
@@ -31,7 +33,7 @@ export interface MatchPlayer {
   club?: string;
 }
 
-export type MatchType = 'ranked' | 'training' | 'tournament' | 'challenge' | 'private' | 'tutorial' | 'online' | 'local';
+export type MatchType = 'ranked' | 'training' | 'tournament' | 'challenge' | 'private' | 'tutorial' | 'online' | 'local' | 'event';
 
 export interface MatchSetup {
   type: MatchType;
@@ -78,6 +80,8 @@ export interface MatchResult {
   stats: { avg: number; darts: number; best: number; s180: number; checkout: number; tons: number }[];
   challengeScore?: number;
   stars?: number;
+  eventPoints?: number;
+  eventLines?: { label: string; pts: number }[];
   doubled?: boolean;
 }
 
@@ -115,6 +119,8 @@ export class Match {
   private remoteQueue: ServerMsg[] = [];
   private remoteWake: (() => void) | null = null;
   private turnHits: Hit[] = [];
+  /** dardos del jugador local en esta partida (para eventos y estadísticas) */
+  private myHits: Hit[] = [];
   onEnd?: (r: MatchResult) => void;
 
   constructor(public setup: MatchSetup, state?: MatchState) {
@@ -156,7 +162,7 @@ export class Match {
     v.setGameMode(true);
     engine.setView(v);
     audio.stopMusic();
-    audio.setAmbience(this.setup.arena >= 4 ? 1.4 : 1);
+    audio.setAmbience(this.setup.arena >= 4 ? 1.4 : 1, this.setup.arena >= 4 ? 'arena' : this.setup.arena >= 2 ? 'club' : 'pub');
     if (this.setup.online) this.listenOnline();
     this.updateCheckout();
     this.emit();
@@ -217,17 +223,38 @@ export class Match {
     this.emit();
     const hit = resolveHit(shot.x, shot.y, Math.random());
     audio.whoosh();
+    const cine = this.maxChance();
+    if (cine) audio.tension();
     if (this.setup.online) {
       net.send({ t: 'throw', x: hit.x, y: hit.y, bounce: !!hit.bounce });
-      await this.view.throwDart({ x: hit.x, y: hit.y, look: pl.dart, bounce: hit.bounce, fromHand: true });
+      await this.view.throwDart({ x: hit.x, y: hit.y, look: pl.dart, bounce: hit.bounce, fromHand: true, cine });
       this.onImpact(hit, idx);
+      if (cine) this.endCine(hit);
       // el estado oficial llega del servidor
       await this.waitRemoteState(true);
       return;
     }
-    await this.view.throwDart({ x: hit.x, y: hit.y, look: pl.dart, bounce: hit.bounce, fromHand: true });
+    await this.view.throwDart({ x: hit.x, y: hit.y, look: pl.dart, bounce: hit.bounce, fromHand: true, cine });
     this.onImpact(hit, idx);
+    if (cine) this.endCine(hit);
     await this.applyLocal(hit, idx);
+  }
+
+  /** ¿Lleva dos T20 en el turno? El tercer dardo se ve a cámara lenta. */
+  private maxChance(): boolean {
+    const s = this.ui.state;
+    if (this.setup.type === 'tutorial' || (s.config.mode !== 'x01' && s.config.mode !== 'free')) return false;
+    if (s.turn.length !== 2 || !s.turn.every((h) => h.ring === 'T' && h.num === 20)) return false;
+    if (s.config.mode === 'x01') {
+      const left = s.players[s.current].remaining;
+      if (s.config.doubleOut ? left - 60 < 2 : left < 60) return false;
+    }
+    return true;
+  }
+
+  private endCine(hit: Hit) {
+    this.view.endCine();
+    if (!(hit.ring === 'T' && hit.num === 20)) audio.ooh(1.1);
   }
 
   private async botDart(idx: number) {
@@ -237,8 +264,11 @@ export class Match {
     if (this.aborted) return;
     const { hit } = botThrow(this.ui.state, idx, bot.skill, this.r);
     audio.whoosh();
-    await this.view.throwDart({ x: hit.x, y: hit.y, look: pl.dart, bounce: hit.bounce });
+    const cine = this.maxChance();
+    if (cine) audio.tension();
+    await this.view.throwDart({ x: hit.x, y: hit.y, look: pl.dart, bounce: hit.bounce, cine });
     this.onImpact(hit, idx);
+    if (cine) this.endCine(hit);
     await this.applyLocal(hit, idx);
   }
 
@@ -261,6 +291,7 @@ export class Match {
     if (player === this.you) this.ui.dartsUsed++;
     if (this.setup.type === 'challenge') this.ui.challengeHits = [...this.ui.challengeHits, hit];
     const localHuman = this.setup.online ? player === this.you : this.setup.players[player].kind === 'human' && player === 0;
+    if (localHuman) this.myHits.push(hit);
     if (localHuman && this.setup.type !== 'tutorial') track({ type: 'dart', hit });
     this.emit();
   }
@@ -500,6 +531,23 @@ export class Match {
     const opp = setup.players[1 - you] ?? setup.players[0];
     const isRanked = setup.type === 'ranked' || (setup.type === 'online' && !!setup.online?.ranked);
 
+    if (setup.type === 'event') {
+      const def = currentLiveEvent().def;
+      const turns = s.history.filter((h) => h.player === you && !h.bust);
+      const ev = scoreEventMatch(def, res.won && reason !== 'forfeit', {
+        bulls: this.myHits.filter((h) => h.ring === 'SB' || h.ring === 'DB').length,
+        dbulls: this.myHits.filter((h) => h.ring === 'DB').length,
+        trebles: this.myHits.filter((h) => h.ring === 'T').length,
+        doubles: this.myHits.filter((h) => h.ring === 'D' || h.ring === 'DB').length,
+        tons: Math.max(me.tons, turns.filter((h) => h.total >= 100).length),
+        s180: me.max180,
+        checkout: res.won && s.config.mode === 'x01' && !!s.config.doubleOut && reason === 'win',
+      });
+      res.eventPoints = reason === 'forfeit' ? 0 : ev.total;
+      res.eventLines = reason === 'forfeit' ? [] : ev.lines;
+      addEventPoints(res.eventPoints);
+    }
+
     if (setup.type === 'challenge' && setup.challenge) {
       const score = setup.challenge.score(this.ui.challengeHits);
       res.challengeScore = score;
@@ -545,6 +593,11 @@ export class Match {
       } else if (setup.type === 'training' || setup.type === 'local' || setup.type === 'private') {
         res.xp = reason === 'forfeit' ? 0 : 12;
         addSeasonXp(p, 8);
+      } else if (setup.type === 'event') {
+        res.xp = reason === 'forfeit' ? 0 : res.won ? 35 : 15;
+        res.coins = res.won ? 150 + setup.arena * 60 : 0;
+        p.coins += res.coins;
+        addSeasonXp(p, res.won ? 25 : 10);
       } else if (setup.type === 'tournament') {
         res.xp = res.won ? 40 : 15;
         addSeasonXp(p, res.won ? 20 : 8);

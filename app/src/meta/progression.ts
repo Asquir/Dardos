@@ -29,6 +29,7 @@ export const FEATURE_LEVEL = {
   challenge: 2,
   season: 2,
   wheel: 1,
+  liveEvent: 2,
 } as const;
 export type Feature = keyof typeof FEATURE_LEVEL;
 

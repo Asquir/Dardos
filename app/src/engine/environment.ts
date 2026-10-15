@@ -12,6 +12,7 @@ import {
   woodTexture,
   heightToNormal,
   makeCanvas,
+  makeNoise,
 } from './textures';
 import { rng } from '@shared/bot';
 
@@ -464,6 +465,113 @@ export function buildEnvironment(theme: ArenaTheme, quality: 'low' | 'medium' | 
     }
   }
 
+  // Anillo de luz LED alrededor de la diana (como en los torneos profesionales)
+  if (theme.floor === 'stage') {
+    const ringCol = theme.accents[0]?.color ?? '#ffffff';
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.262, 0.0065, 12, 96), new THREE.MeshBasicMaterial({ color: '#b8c8ff', toneMapped: false }));
+    ring.position.set(0, BOARD_HEIGHT, -0.004);
+    g.add(ring);
+    const housing = new THREE.Mesh(new THREE.TorusGeometry(0.262, 0.013, 10, 96), new THREE.MeshStandardMaterial({ color: 0x1a1d24, metalness: 0.8, roughness: 0.3 }));
+    housing.position.set(0, BOARD_HEIGHT, -0.014);
+    housing.scale.z = 0.6;
+    g.add(housing);
+    const [hc, hctx] = makeCanvas(256);
+    const hg = hctx.createRadialGradient(128, 128, 88, 128, 128, 128);
+    hg.addColorStop(0, 'rgba(255,255,255,0)');
+    hg.addColorStop(0.62, 'rgba(255,255,255,0.9)');
+    hg.addColorStop(1, 'rgba(255,255,255,0)');
+    hctx.fillStyle = hg;
+    hctx.fillRect(0, 0, 256, 256);
+    const halo = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.9, 0.9),
+      new THREE.MeshBasicMaterial({ map: toTexture(hc), color: ringCol, transparent: true, opacity: 0.2, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }),
+    );
+    halo.position.set(0, BOARD_HEIGHT, -0.035);
+    g.add(halo);
+    updaters.push((t) => {
+      (halo.material as THREE.MeshBasicMaterial).opacity = 0.17 + Math.sin(t * 1.4) * 0.03;
+    });
+  }
+
+  // Haz de luz volumétrico con motas de polvo (lámpara en los bares, foco cenital en los estadios)
+  const stage = theme.floor === 'stage';
+  const beamHost = stage ? g : lamp;
+  const from = stage ? new THREE.Vector3(0.02, BOARD_HEIGHT + 2.3, 1.3) : new THREE.Vector3(0, -0.02, 0);
+  const to = stage ? new THREE.Vector3(0, BOARD_HEIGHT - 0.12, 0.02) : new THREE.Vector3(0, -0.42, -0.34);
+  const len = from.distanceTo(to) * 1.08;
+  const beamGeo = new THREE.CylinderGeometry(stage ? 0.07 : 0.05, stage ? 0.55 : 0.36, len, 48, 1, true);
+  beamGeo.translate(0, -len / 2, 0);
+  const beam = new THREE.Mesh(
+    beamGeo,
+    new THREE.MeshBasicMaterial({ map: beamTexture(), color: theme.key, transparent: true, opacity: stage ? 0.1 : 0.085, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }),
+  );
+  beam.position.copy(from);
+  beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), to.clone().sub(from).normalize());
+  beam.renderOrder = 3;
+  beamHost.add(beam);
+  {
+    const N = quality === 'low' ? 40 : 110;
+    const pos = new Float32Array(N * 3);
+    const seeds = new Float32Array(N);
+    const dir = to.clone().sub(from);
+    for (let i = 0; i < N; i++) {
+      const k = 0.15 + r() * 0.85;
+      const rad = (stage ? 0.5 : 0.32) * k * Math.sqrt(r());
+      const a = r() * Math.PI * 2;
+      pos[i * 3] = from.x + dir.x * k + Math.cos(a) * rad;
+      pos[i * 3 + 1] = from.y + dir.y * k + Math.sin(a) * rad * 0.5;
+      pos[i * 3 + 2] = from.z + dir.z * k + Math.sin(a) * rad;
+      seeds[i] = r() * 100;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const base = pos.slice();
+    const motes = new THREE.Points(
+      geo,
+      new THREE.PointsMaterial({ map: glowTexture(), size: stage ? 0.012 : 0.006, color: theme.key, transparent: true, opacity: 0.6, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }),
+    );
+    motes.frustumCulled = false;
+    motes.renderOrder = 4;
+    beamHost.add(motes);
+    updaters.push((t) => {
+      if (!beamHost.visible) return;
+      const pa = geo.attributes.position as THREE.BufferAttribute;
+      for (let i = 0; i < N; i++) {
+        const sd = seeds[i];
+        pa.setXYZ(
+          i,
+          base[i * 3] + Math.sin(t * 0.21 + sd) * 0.03,
+          base[i * 3 + 1] + Math.sin(t * 0.13 + sd * 1.7) * 0.025 - ((t * 0.006 + sd) % 0.05),
+          base[i * 3 + 2] + Math.cos(t * 0.17 + sd) * 0.03,
+        );
+      }
+      pa.needsUpdate = true;
+      (motes.material as THREE.PointsMaterial).opacity = 0.45 + Math.sin(t * 1.3) * 0.12;
+      (beam.material as THREE.MeshBasicMaterial).opacity = (stage ? 0.1 : 0.085) * (0.92 + Math.sin(t * 0.7) * 0.08);
+    });
+  }
+
+  // Humo/ambiente suave en lo alto del local
+  if (quality !== 'low') {
+    const smoke = smokeTexture();
+    for (let i = 0; i < 3; i++) {
+      const m = new THREE.Mesh(
+        new THREE.PlaneGeometry(3.2, 1.4),
+        new THREE.MeshBasicMaterial({ map: smoke, color: i === 1 ? theme.ambient[0] : theme.key, transparent: true, opacity: stage ? 0.07 : 0.05, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }),
+      );
+      const x0 = (i - 1) * 1.4;
+      const y0 = BOARD_HEIGHT + 0.55 + i * 0.18;
+      m.position.set(x0, y0, 0.25 + i * 0.25);
+      g.add(m);
+      const ph = r() * 10;
+      updaters.push((t) => {
+        m.position.x = x0 + Math.sin(t * 0.05 + ph) * 0.4;
+        m.position.y = y0 + Math.sin(t * 0.07 + ph) * 0.06;
+        m.rotation.z = Math.sin(t * 0.03 + ph) * 0.08;
+      });
+    }
+  }
+
   // Flashes del público
   const flashes: THREE.Sprite[] = [];
   if (theme.extras.includes('bokeh')) {
@@ -498,4 +606,50 @@ export function buildEnvironment(theme: ArenaTheme, quality: 'low' | 'medium' | 
       }
     },
   };
+}
+
+let beamTex: THREE.Texture | null = null;
+/** Textura del haz: brillante arriba, se desvanece abajo, con vetas de polvo. */
+function beamTexture(): THREE.Texture {
+  if (beamTex) return beamTex;
+  const [c, ctx] = makeCanvas(256, 256);
+  const n = makeNoise(77);
+  const img = ctx.createImageData(256, 256);
+  for (let y = 0; y < 256; y++) {
+    const v = y / 255;
+    const fall = Math.pow(1 - v, 1.4) * (0.35 + 0.65 * Math.min(1, v * 6));
+    for (let x = 0; x < 256; x++) {
+      const streak = 0.65 + 0.35 * n.fbm(x / 9, y / 70, 3);
+      const edge = Math.sin((x / 255) * Math.PI);
+      const a = fall * streak * (0.55 + 0.45 * edge);
+      const i = (y * 256 + x) * 4;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = 255;
+      img.data[i + 3] = Math.round(a * 255);
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  beamTex = toTexture(c);
+  return beamTex;
+}
+
+let smokeTex: THREE.Texture | null = null;
+function smokeTexture(): THREE.Texture {
+  if (smokeTex) return smokeTex;
+  const [c, ctx] = makeCanvas(256, 128);
+  const n = makeNoise(91);
+  const img = ctx.createImageData(256, 128);
+  for (let y = 0; y < 128; y++) {
+    for (let x = 0; x < 256; x++) {
+      const u = x / 255;
+      const v = y / 127;
+      const mask = Math.sin(u * Math.PI) * Math.sin(v * Math.PI);
+      const d = Math.max(0, n.fbm(x / 40, y / 30, 5) - 0.35) * 1.8;
+      const i = (y * 256 + x) * 4;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = 255;
+      img.data[i + 3] = Math.round(Math.min(1, d * mask * mask) * 255);
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  smokeTex = toTexture(c);
+  return smokeTex;
 }

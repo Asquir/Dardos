@@ -14,6 +14,9 @@ import { rankedSetup, launch } from '../../game/launch';
 import { openChestReward } from '../rewards';
 import { HomeTutorial } from '../overlays/Tutorial';
 import { net, netStatus } from '../../services/net';
+import { currentLiveEvent } from '../../meta/liveEvents';
+import { eventClaimable } from '../../meta/events';
+import type { JSX } from 'preact';
 
 export function Home() {
   const p = useStore(profileStore);
@@ -77,6 +80,9 @@ export function Home() {
   const starterAvailable = !p.purchases.starterPack && now - p.createdAt < 72 * 3600 * 1000 && p.tutorial.done;
   const missionsReady = p.missions.list.filter((m) => !m.claimed && m.progress >= m.target).length;
   const seasonN = seasonClaimable(p);
+  const ev = currentLiveEvent(now);
+  const evOpen = p.level >= FEATURE_LEVEL.liveEvent;
+  const evN = evOpen ? eventClaimable() : 0;
 
   return (
     <div class="screen">
@@ -140,6 +146,15 @@ export function Home() {
           </div>
           <span class="timer">{freeN ? '¡Gratis!' : fmtTime((p.freeChestAt + (freeN ? FREE_CHEST_PERIOD : 0) - now) / 1000)}</span>
         </button>
+        {evOpen && (
+          <button class="side-btn ev" style={{ '--c1': ev.def.colors[0], '--c2': ev.def.colors[1], '--c3': ev.def.colors[2] } as unknown as JSX.CSSProperties} onClick={() => (audio.click(), go('liveEvent'))}>
+            <div class="ib glow">
+              <span style={{ fontSize: '24px', lineHeight: 1 }}>{ev.def.icon}</span>
+              {evN > 0 && <span class="badge">{evN}</span>}
+            </div>
+            <span class="timer">{fmtTime((ev.endsAt - now) / 1000)}</span>
+          </button>
+        )}
         {starterAvailable && (
           <button class="side-btn" onClick={() => go('shop', { section: 'offers' })}>
             <div class="ib glow" style={{ background: 'linear-gradient(180deg,#ff9d00,#ff3d6a)' }}>

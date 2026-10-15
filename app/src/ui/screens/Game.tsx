@@ -20,6 +20,7 @@ import { xpForNext } from '../../meta/progression';
 import { TutorialCoach, tutorialAfterMatch } from '../overlays/Tutorial';
 import { tournamentAfterMatch } from './Tournament';
 import { challengeAfterMatch } from './Events';
+import { EventResultPanel } from './LiveEvent';
 
 export function Game() {
   const m = useStore(matchStore);
@@ -208,7 +209,7 @@ function VsIntro({ m }: { m: MatchUI }) {
   return (
     <div class="vs-screen">
       <div class="vs-half top">
-        <AvatarImg cfg={a.avatar} size={200} />
+        <AvatarImg cfg={a.avatar} size={150} h={260} frame="full" pose="wave" class="vs-fig" />
         <div>
           <div class="nm outline">{a.name}</div>
           <div class="meta">
@@ -218,7 +219,7 @@ function VsIntro({ m }: { m: MatchUI }) {
         </div>
       </div>
       <div class="vs-half bottom">
-        <AvatarImg cfg={b.avatar} size={200} />
+        <AvatarImg cfg={b.avatar} size={150} h={260} frame="full" pose="idle" class="vs-fig" />
         <div>
           <div class="nm outline">{b.name}</div>
           <div class="meta">
@@ -294,6 +295,13 @@ function Results({ m }: { m: MatchUI }) {
     if (setup.type === 'tutorial') return tutorialAfterMatch(r);
     if (setup.type === 'tournament') return tournamentAfterMatch(r);
     if (setup.type === 'challenge') return challengeAfterMatch(r);
+    if (setup.type === 'event') {
+      if (shouldShowInterstitial()) {
+        noteInterstitialShown();
+        await ads.interstitial();
+      }
+      return go('liveEvent');
+    }
     if (shouldShowInterstitial()) {
       noteInterstitialShown();
       await ads.interstitial();
@@ -338,16 +346,18 @@ function Results({ m }: { m: MatchUI }) {
       {!solo && (
         <div class="versus">
           <div class={'side' + (r.winner === 0 ? ' winner' : '')}>
-            <AvatarImg cfg={pls[0].avatar} size={192} />
+            <AvatarImg cfg={pls[0].avatar} size={130} h={210} frame="full" pose={r.winner === 0 ? 'cheer' : 'sad'} />
             <div class="nm">{pls[0].name}</div>
           </div>
           <div class="vs">VS</div>
           <div class={'side' + (r.winner === 1 ? ' winner' : '')}>
-            <AvatarImg cfg={pls[1].avatar} size={192} />
+            <AvatarImg cfg={pls[1].avatar} size={130} h={210} frame="full" pose={r.winner === 1 ? 'cheer' : 'sad'} />
             <div class="nm">{pls[1].name}</div>
           </div>
         </div>
       )}
+
+      {setup.type === 'event' && <EventResultPanel r={r} />}
 
       {setup.config.mode === 'x01' && me && (
         <table class="stat-table">
@@ -391,6 +401,13 @@ function Results({ m }: { m: MatchUI }) {
               <div class="k">Copas</div>
             </div>
           </>
+        )}
+        {setup.type === 'event' && r.coins > 0 && (
+          <div class="reward">
+            <Coin class="ico" />
+            <div class="v">{fmtNum(r.coins)}</div>
+            <div class="k">Monedas</div>
+          </div>
         )}
         {r.xp > 0 && (
           <div class="reward" style={{ animationDelay: '.2s' }}>
@@ -443,6 +460,6 @@ export function quitMatch() {
   m.abort();
   if (!matchStore.get()?.result) {
     closeMatch();
-    go(st === 'training' || st === 'local' || st === 'challenge' ? 'events' : 'home');
+    go(st === 'training' || st === 'local' || st === 'challenge' ? 'events' : st === 'event' ? 'liveEvent' : 'home');
   }
 }

@@ -766,6 +766,117 @@ export const FLIGHT_DESIGNS: Record<string, FlightDesign['draw']> = {
     ctx.textAlign = 'center';
     ctx.fillText('S1', s / 2, s * 0.45);
   },
+  ev_bull: (ctx, s) => {
+    const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s * 0.7);
+    g.addColorStop(0, '#ffe066');
+    g.addColorStop(0.5, '#e0122a');
+    g.addColorStop(1, '#3a0008');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, s, s);
+    for (let i = 4; i > 0; i--) {
+      ctx.strokeStyle = i % 2 ? 'rgba(255,230,120,0.9)' : 'rgba(255,255,255,0.6)';
+      ctx.lineWidth = s * 0.03;
+      ctx.beginPath();
+      ctx.arc(s / 2, s / 2, (i / 4) * s * 0.42, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#0b8a45';
+    ctx.beginPath();
+    ctx.arc(s / 2, s / 2, s * 0.09, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ff1a2e';
+    ctx.beginPath();
+    ctx.arc(s / 2, s / 2, s * 0.045, 0, Math.PI * 2);
+    ctx.fill();
+  },
+  ev_neon3: (ctx, s) => {
+    ctx.fillStyle = '#0a0018';
+    ctx.fillRect(0, 0, s, s);
+    ctx.shadowColor = '#d18bff';
+    ctx.shadowBlur = 16;
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `${Math.round(s * 0.5)}px "Lilita One", sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('T', s * 0.5, s * 0.55);
+    ctx.shadowBlur = 0;
+    [0.25, 0.5, 0.75].forEach((x, i) => star(ctx, s * x, s * 0.18, s * 0.07, ['#21e6ff', '#ff2bd6', '#ffe600'][i]));
+    ctx.strokeStyle = '#21e6ff';
+    ctx.lineWidth = s * 0.03;
+    ctx.strokeRect(s * 0.08, s * 0.08, s * 0.84, s * 0.84);
+  },
+  ev_thunder: (ctx, s) => {
+    const g = ctx.createLinearGradient(0, 0, 0, s);
+    g.addColorStop(0, '#0a1f66');
+    g.addColorStop(1, '#1f6dff');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, s, s);
+    ctx.strokeStyle = '#fff6a0';
+    ctx.shadowColor = '#ffe600';
+    ctx.shadowBlur = 14;
+    ctx.lineWidth = s * 0.045;
+    ctx.lineJoin = 'round';
+    for (const off of [0.3, 0.62]) {
+      ctx.beginPath();
+      ctx.moveTo(s * off, 0);
+      ctx.lineTo(s * (off - 0.12), s * 0.4);
+      ctx.lineTo(s * (off + 0.04), s * 0.45);
+      ctx.lineTo(s * (off - 0.1), s);
+      ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+  },
+  ev_cricket: (ctx, s) => {
+    ctx.fillStyle = '#05331f';
+    ctx.fillRect(0, 0, s, s);
+    ctx.fillStyle = '#d4ff3a';
+    ctx.font = `${Math.round(s * 0.14)}px "Lilita One", sans-serif`;
+    ctx.textAlign = 'center';
+    ['20', '19', '18', '17', '16', '15'].forEach((n, i) => ctx.fillText(n, s * (0.22 + (i % 3) * 0.28), s * (0.32 + Math.floor(i / 3) * 0.3)));
+    ctx.strokeStyle = 'rgba(212,255,58,0.85)';
+    ctx.lineWidth = s * 0.03;
+    for (let i = 0; i < 6; i++) {
+      const x = s * (0.22 + (i % 3) * 0.28);
+      const y = s * (0.27 + Math.floor(i / 3) * 0.3);
+      ctx.beginPath();
+      ctx.arc(x, y, s * 0.11, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    star(ctx, s / 2, s * 0.86, s * 0.08, '#ffe600');
+  },
+  ev_crown: (ctx, s) => {
+    const g = ctx.createLinearGradient(0, 0, s, s);
+    g.addColorStop(0, '#5a2a00');
+    g.addColorStop(0.5, '#c47d00');
+    g.addColorStop(1, '#2a1200');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, s, s);
+    ctx.fillStyle = '#fff1a8';
+    ctx.beginPath();
+    ctx.moveTo(s * 0.18, s * 0.7);
+    ctx.lineTo(s * 0.12, s * 0.3);
+    ctx.lineTo(s * 0.35, s * 0.5);
+    ctx.lineTo(s * 0.5, s * 0.2);
+    ctx.lineTo(s * 0.65, s * 0.5);
+    ctx.lineTo(s * 0.88, s * 0.3);
+    ctx.lineTo(s * 0.82, s * 0.7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#e0122a';
+    ctx.beginPath();
+    ctx.arc(s * 0.5, s * 0.55, s * 0.05, 0, Math.PI * 2);
+    ctx.fill();
+  },
+  ev_inferno: (ctx, s) => {
+    FLIGHT_DESIGNS.flames(ctx, s);
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = '#3a0010';
+    ctx.lineWidth = s * 0.03;
+    ctx.font = `${Math.round(s * 0.32)}px "Lilita One", sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.strokeText('180', s / 2, s * 0.62);
+    ctx.fillText('180', s / 2, s * 0.62);
+  },
   pixel: (ctx, s) => {
     const n = 8;
     const cols = ['#ff004d', '#ffa300', '#ffec27', '#00e436', '#29adff', '#83769c', '#ff77a8'];

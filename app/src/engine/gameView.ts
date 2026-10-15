@@ -5,11 +5,11 @@ import * as THREE from 'three';
 import { BOARD, SEGMENTS, type Hit } from '@shared/board';
 import type { DartLook } from '@shared/protocol';
 import { gaussian } from '@shared/bot';
-import { engine, type View } from './renderer';
+import { engine, type View, type Grade } from './renderer';
 import { buildBoard, buildReticle, BOARD_HEIGHT, THROW_DISTANCE, type BoardModel, type Reticle } from './board';
 import { ARENA_THEMES, buildEnvironment, type Environment } from './environment';
 import { buildDart, type DartModel } from './dart';
-import type { BoardStyle } from './textures';
+import { glowTexture, type BoardStyle } from './textures';
 
 const MM = 0.001;
 /** los dardos se ven un poco más grandes que en la realidad para que luzcan en el móvil */
@@ -55,6 +55,27 @@ interface Flying {
   bounce: boolean;
   wall: boolean;
   resolve: () => void;
+  trail: Trail | null;
+  cine: boolean;
+}
+interface Trail {
+  mesh: THREE.Mesh;
+  pts: THREE.Vector3[];
+  dead: boolean;
+  color: THREE.Color;
+}
+interface Spark {
+  i: number;
+  life: number;
+  max: number;
+  vel: THREE.Vector3;
+  color: THREE.Color;
+}
+interface Wave {
+  mesh: THREE.Mesh;
+  t: number;
+  dur: number;
+  size: number;
 }
 interface Stuck {
   model: DartModel;
@@ -76,6 +97,20 @@ interface Leaving {
   delay: number;
 }
 
+const TRAIL_N = 22;
+const SPARK_N = 160;
+
+/** Gradación de color de cada arena (estilo cinematográfico). */
+const ARENA_GRADES: Partial<Grade>[] = [
+  { saturation: 1.08, contrast: 1.07, shadows: [-0.01, 0.004, 0.022], highlights: [0.03, 0.014, -0.01], vignette: 0.46 },
+  { saturation: 1.06, contrast: 1.06, shadows: [-0.016, 0.008, 0.02], highlights: [0.028, 0.016, -0.006], vignette: 0.46 },
+  { saturation: 1.16, contrast: 1.08, shadows: [0.006, -0.01, 0.03], highlights: [0.02, -0.006, 0.026], vignette: 0.5 },
+  { saturation: 1.1, contrast: 1.07, shadows: [-0.008, -0.004, 0.012], highlights: [0.034, 0.02, -0.014], vignette: 0.46 },
+  { saturation: 1.1, contrast: 1.1, shadows: [-0.016, 0.0, 0.034], highlights: [0.014, 0.008, -0.004], vignette: 0.5 },
+  { saturation: 1.12, contrast: 1.1, shadows: [0.004, -0.012, 0.03], highlights: [0.032, 0.016, -0.012], vignette: 0.5 },
+  { saturation: 1.14, contrast: 1.08, shadows: [0.006, -0.008, 0.036], highlights: [0.02, 0.012, 0.016], vignette: 0.52 },
+];
+
 /** inclina un poco hacia fuera los dardos de los lados (más natural) */
 const opts_side = (x: number) => Math.max(-1, Math.min(1, x / 0.17));
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -87,6 +122,8 @@ export class GameView implements View {
   camera = new THREE.PerspectiveCamera(30, 1, 0.02, 40);
   bloom = { strength: 0.42, radius: 0.55, threshold: 0.86 };
   exposure = 1.05;
+  grade: Partial<Grade> = { ...ARENA_GRADES[0] };
+  private baseGrade: Partial<Grade> = ARENA_GRADES[0];
 
   board: BoardModel;
   reticle: Reticle;
@@ -104,6 +141,13 @@ export class GameView implements View {
   private dust: THREE.Points;
   private dustVel: Float32Array;
   private dustLife: Float32Array;
+  private trails: Trail[] = [];
+  private sparks: THREE.Points;
+  private sparkList: Spark[] = [];
+  private sparkFree: number[] = [];
+  private waves: Wave[] = [];
+  // cámara lenta del posible 180
+  private cine: { model: DartModel; target: THREE.Vector3; w: number; hold: number; active: boolean } | null = null;
 
   // cámara
   private camPos = new THREE.Vector3();
@@ -152,6 +196,19 @@ export class GameView implements View {
     this.scene.add(this.dust);
     this.scene.fog = null;
     this.scene.environmentIntensity = 0.22;
+
+    // chispas de los aciertos importantes
+    const sg = new THREE.BufferGeometry();
+    sg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(SPARK_N * 3).fill(-10), 3));
+    sg.setAttribute('color', new THREE.BufferAttribute(new Float32Array(SPARK_N * 3), 3));
+    this.sparks = new THREE.Points(
+      sg,
+      new THREE.PointsMaterial({ map: glowTexture(), size: 0.012, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }),
+    );
+    this.sparks.frustumCulled = false;
+    this.sparks.renderOrder = 6;
+    this.scene.add(this.sparks);
+    for (let i = SPARK_N - 1; i >= 0; i--) this.sparkFree.push(i);
   }
 
   setBoardStyle(style: BoardStyle) {
@@ -170,6 +227,8 @@ export class GameView implements View {
     this.arena = id;
     env.lamp.visible = this.mode === 'game';
     this.scene.add(env.group);
+    this.baseGrade = ARENA_GRADES[id] ?? ARENA_GRADES[0];
+    this.grade = { ...this.baseGrade };
     this.scene.background = new THREE.Color(ARENA_THEMES[id]?.wallColors[0] ?? '#000');
   }
 
@@ -278,7 +337,7 @@ export class GameView implements View {
    * Lanza un dardo hacia (x, y) mm. Si `fromHand`, sale del dardo sostenido por el jugador.
    * Devuelve una promesa que se resuelve al impactar.
    */
-  throwDart(opts: { x: number; y: number; look: DartLook; bounce?: boolean; fromHand?: boolean; speed?: number }): Promise<void> {
+  throwDart(opts: { x: number; y: number; look: DartLook; bounce?: boolean; fromHand?: boolean; speed?: number; cine?: boolean }): Promise<void> {
     return new Promise((resolve) => {
       let model: DartModel;
       let p0: THREE.Vector3;
@@ -301,7 +360,13 @@ export class GameView implements View {
       const p1 = p0.clone().lerp(p2, 0.5);
       p1.y += 0.12 + p0.distanceTo(p2) * 0.03;
       const dur = (0.3 + p0.distanceTo(p2) * 0.05) / (opts.speed ?? 1);
-      this.flying.push({ model, p0, p1, p2, t: 0, dur, roll: Math.random() * 6, bounce: !!opts.bounce || wall, wall, resolve });
+      const trail = engine.quality === 'low' ? null : this.makeTrail(opts.look.flight);
+      const cine = !!opts.cine && engine.quality !== 'low';
+      if (cine) {
+        this.cine = { model, target: p2.clone(), w: 0, hold: 0, active: true };
+        engine.timeScale = 0.3;
+      }
+      this.flying.push({ model, p0, p1, p2, t: 0, dur, roll: Math.random() * 6, bounce: !!opts.bounce || wall, wall, resolve, trail, cine });
     });
   }
 
@@ -331,6 +396,106 @@ export class GameView implements View {
     this.falling = [];
     this.leaving = [];
     this.celebrateT = 0;
+    for (const tr of this.trails) this.disposeTrail(tr);
+    this.trails = [];
+    this.cine = null;
+    engine.timeScale = 1;
+  }
+
+  // ------------------------------------------------------------------ estelas, chispas y ondas
+
+  private makeTrail(flightId: string): Trail {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL_N * 2 * 3), 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(TRAIL_N * 2 * 4), 4));
+    const idx: number[] = [];
+    for (let i = 0; i < TRAIL_N - 1; i++) {
+      const a = i * 2;
+      idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+    }
+    geo.setIndex(idx);
+    geo.setDrawRange(0, 0);
+    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, toneMapped: false }));
+    mesh.frustumCulled = false;
+    mesh.renderOrder = 5;
+    this.scene.add(mesh);
+    // color de la estela según la aleta (dorado, fuego, hielo...)
+    const hues: [RegExp, string][] = [
+      [/fire|flame|inferno|red|bull/, '#ff7a3a'],
+      [/ice|blue|thunder|neon|aqua/, '#5fd0ff'],
+      [/gold|crown|king/, '#ffd23a'],
+      [/green|cricket|toxic/, '#7dff9a'],
+      [/purple|galaxy|cosmic/, '#c08aff'],
+    ];
+    const hex = hues.find(([re]) => re.test(flightId))?.[1] ?? '#cfe4ff';
+    const tr: Trail = { mesh, pts: [], dead: false, color: new THREE.Color(hex) };
+    this.trails.push(tr);
+    return tr;
+  }
+
+  private updateTrail(tr: Trail) {
+    const geo = tr.mesh.geometry;
+    const pos = geo.attributes.position as THREE.BufferAttribute;
+    const col = geo.attributes.color as THREE.BufferAttribute;
+    const n = tr.pts.length;
+    const camDir = tmpV.copy(this.camera.position);
+    for (let i = 0; i < n; i++) {
+      const p = tr.pts[i];
+      const q = tr.pts[Math.min(n - 1, i + 1)];
+      const o = tr.pts[Math.max(0, i - 1)];
+      const seg = tmpV2.copy(q).sub(o);
+      const view = camDir.clone().sub(p);
+      const side = seg.cross(view).normalize();
+      const k = n > 1 ? i / (n - 1) : 1; // 0 = cola más antigua
+      const w = 0.0035 * (0.25 + 0.75 * k) * DART_SCALE;
+      pos.setXYZ(i * 2, p.x + side.x * w, p.y + side.y * w, p.z + side.z * w);
+      pos.setXYZ(i * 2 + 1, p.x - side.x * w, p.y - side.y * w, p.z - side.z * w);
+      const a = Math.pow(k, 1.6) * 0.55;
+      col.setXYZW(i * 2, tr.color.r, tr.color.g, tr.color.b, a);
+      col.setXYZW(i * 2 + 1, tr.color.r, tr.color.g, tr.color.b, a);
+    }
+    pos.needsUpdate = true;
+    col.needsUpdate = true;
+    geo.setDrawRange(0, Math.max(0, (n - 1) * 6));
+  }
+
+  private disposeTrail(tr: Trail) {
+    tr.mesh.removeFromParent();
+    tr.mesh.geometry.dispose();
+    (tr.mesh.material as THREE.Material).dispose();
+  }
+
+  private sparkBurst(p: THREE.Vector3, n: number, color: string, speed = 1) {
+    const c = new THREE.Color(color);
+    const pos = this.sparks.geometry.attributes.position as THREE.BufferAttribute;
+    for (let k = 0; k < n && this.sparkFree.length; k++) {
+      const i = this.sparkFree.pop()!;
+      const a = Math.random() * Math.PI * 2;
+      const up = Math.random();
+      const v = (0.25 + Math.random() * 0.75) * speed;
+      const vel = new THREE.Vector3(Math.cos(a) * v, Math.sin(a) * v * 0.8 + up * 0.25, 0.15 + Math.random() * 0.5 * speed);
+      pos.setXYZ(i, p.x, p.y, p.z + 0.006);
+      const life = 0.35 + Math.random() * 0.45;
+      this.sparkList.push({ i, life, max: life, vel, color: k % 4 === 0 ? new THREE.Color('#ffffff') : c });
+    }
+    pos.needsUpdate = true;
+  }
+
+  private shockwave(p: THREE.Vector3, color: string, size: number, dur = 0.45) {
+    const mesh = new THREE.Mesh(
+      new THREE.RingGeometry(0.82, 1, 48),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }),
+    );
+    mesh.position.set(p.x, p.y, 0.003);
+    mesh.scale.setScalar(0.004);
+    mesh.renderOrder = 6;
+    this.scene.add(mesh);
+    this.waves.push({ mesh, t: 0, dur, size });
+  }
+
+  /** Termina la cámara lenta (tras el tercer dardo del posible 180). */
+  endCine() {
+    if (this.cine) this.cine.active = false;
   }
 
   // ------------------------------------------------------------------ efectos
@@ -356,6 +521,23 @@ export class GameView implements View {
     mesh.position.z = 0.0015;
     this.board.group.add(mesh);
     this.highlights.push({ mesh, t: 0 });
+    // chispas y onda en los aciertos importantes
+    const p = this.boardPoint(hit.x, hit.y);
+    if (engine.quality === 'low') return;
+    if (hit.ring === 'DB') {
+      this.sparkBurst(p, 46, '#ffd23a', 1.3);
+      this.sparkBurst(p, 18, '#ff3d4d', 1);
+      this.shockwave(p, '#ffd23a', 0.09, 0.55);
+      this.shockwave(p, '#ff5a3a', 0.05, 0.4);
+    } else if (hit.ring === 'T') {
+      this.sparkBurst(p, hit.num === 20 ? 30 : 22, '#ffc93a', 1);
+      this.shockwave(p, '#ffd23a', 0.055);
+    } else if (hit.ring === 'SB') {
+      this.sparkBurst(p, 16, '#6dffb0', 0.8);
+      this.shockwave(p, '#6dffb0', 0.045);
+    } else if (hit.ring === 'D') {
+      this.sparkBurst(p, 12, '#6dffb0', 0.7);
+    }
   }
 
   private puff(p: THREE.Vector3, n = 14) {
@@ -612,6 +794,30 @@ export class GameView implements View {
         pos.lerp(new THREE.Vector3(1.4, 2.25, THROW_DISTANCE + 1.6), k);
         look.lerp(new THREE.Vector3(0, BOARD_HEIGHT - 0.15, 0), k);
       }
+      if (this.cine) {
+        const c = this.cine;
+        const real = dt / Math.max(0.05, engine.timeScale);
+        if (c.active) c.w = Math.min(1, c.w + real * 3.2);
+        else {
+          c.hold += real;
+          if (c.hold > 0.55) {
+            engine.timeScale = Math.min(1, engine.timeScale + real * 2.2);
+            c.w = Math.max(0, c.w - real * 1.8);
+          }
+        }
+        const k = ease(c.w);
+        const dp = c.model.group.position;
+        const flyingNow = this.flying.some((f) => f.model === c.model);
+        const chase = flyingNow ? tmpV.clone().set(dp.x + 0.03, dp.y + 0.045, dp.z + 0.34) : tmpV.clone().set(c.target.x + 0.035, c.target.y + 0.03, 0.42);
+        pos.lerp(chase, k * 0.9);
+        look.lerp(c.target, k);
+        this.grade = { ...this.baseGrade, vignette: (this.baseGrade.vignette ?? 0.45) + 0.3 * k, saturation: (this.baseGrade.saturation ?? 1) * (1 - 0.35 * k * (flyingNow ? 1 : 0)), aberration: 0.3 + 0.45 * k };
+        if (c.w <= 0 && !c.active) {
+          this.cine = null;
+          engine.timeScale = 1;
+          this.grade = { ...this.baseGrade };
+        }
+      }
       if (this.celebrateT > 0) {
         this.celebrateT = Math.max(0, this.celebrateT - dt);
         const k = Math.sin(Math.min(1, this.celebrateT / 2.2) * Math.PI);
@@ -675,8 +881,19 @@ export class GameView implements View {
       f.model.group.quaternion.setFromUnitVectors(Z_AXIS, tan.clone().negate());
       f.roll += dt * 9;
       f.model.group.rotateZ(f.roll);
+      if (f.trail) {
+        // la estela sale de la aleta
+        const tail = p.clone().addScaledVector(tan, -f.model.length * DART_SCALE * 0.82);
+        f.trail.pts.push(tail);
+        if (f.trail.pts.length > TRAIL_N) f.trail.pts.shift();
+      }
       if (k >= 1) {
         this.flying.splice(i, 1);
+        if (f.trail) f.trail.dead = true;
+        if (f.cine && this.cine) {
+          this.cine.target.copy(f.p2);
+          this.shake = Math.max(this.shake, 0.5);
+        }
         if (f.bounce) {
           const vel = new THREE.Vector3((Math.random() - 0.5) * 0.6, 0.3, f.wall ? 0.6 : 1.1);
           this.falling.push({ model: f.model, vel, spin: new THREE.Vector3(Math.random() * 8, Math.random() * 8, 0), t: 0 });
@@ -700,6 +917,58 @@ export class GameView implements View {
           this.shake = Math.max(this.shake, 0.25);
         }
         f.resolve();
+      }
+    }
+
+    // estelas
+    for (let i = this.trails.length - 1; i >= 0; i--) {
+      const tr = this.trails[i];
+      if (tr.dead) {
+        tr.pts.splice(0, Math.max(1, Math.ceil(tr.pts.length * dt * 9)));
+        if (tr.pts.length < 2) {
+          this.disposeTrail(tr);
+          this.trails.splice(i, 1);
+          continue;
+        }
+      }
+      this.updateTrail(tr);
+    }
+
+    // chispas
+    if (this.sparkList.length) {
+      const sp = this.sparks.geometry.attributes.position as THREE.BufferAttribute;
+      const sc = this.sparks.geometry.attributes.color as THREE.BufferAttribute;
+      for (let k = this.sparkList.length - 1; k >= 0; k--) {
+        const s2 = this.sparkList[k];
+        s2.life -= dt;
+        s2.vel.y -= 1.6 * dt;
+        s2.vel.multiplyScalar(Math.exp(-dt * 2.2));
+        if (s2.life <= 0) {
+          sp.setXYZ(s2.i, 0, -10, 0);
+          this.sparkFree.push(s2.i);
+          this.sparkList.splice(k, 1);
+          continue;
+        }
+        sp.setXYZ(s2.i, sp.getX(s2.i) + s2.vel.x * dt * 0.25, sp.getY(s2.i) + s2.vel.y * dt * 0.25, sp.getZ(s2.i) + s2.vel.z * dt * 0.25);
+        const f = s2.life / s2.max;
+        sc.setXYZ(s2.i, s2.color.r * f * 1.6, s2.color.g * f * 1.6, s2.color.b * f * 1.6);
+      }
+      sp.needsUpdate = true;
+      sc.needsUpdate = true;
+    }
+
+    // ondas expansivas
+    for (let i = this.waves.length - 1; i >= 0; i--) {
+      const w = this.waves[i];
+      w.t += dt;
+      const k = Math.min(1, w.t / w.dur);
+      w.mesh.scale.setScalar(0.004 + (1 - Math.pow(1 - k, 3)) * w.size);
+      (w.mesh.material as THREE.MeshBasicMaterial).opacity = 0.9 * (1 - k);
+      if (k >= 1) {
+        w.mesh.removeFromParent();
+        w.mesh.geometry.dispose();
+        (w.mesh.material as THREE.Material).dispose();
+        this.waves.splice(i, 1);
       }
     }
 

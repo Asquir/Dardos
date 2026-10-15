@@ -16,6 +16,8 @@ Esta política explica qué datos trata la aplicación **Diana Legends** ("el ju
 
 No pedimos tu email, teléfono, ubicación precisa, contactos ni fotos.
 
+Los **avisos** (cofre listo, cofre gratis, recompensa diaria y eventos) son notificaciones locales que programa el propio dispositivo: no se envía ningún dato a ningún servidor para mostrarlos. Puedes desactivarlos en Ajustes del juego o del teléfono.
+
 ## 2. Terceros que reciben datos
 
 - **Google AdMob** (anuncios): https://policies.google.com/privacy — puede usar el identificador de publicidad para anuncios personalizados si das tu consentimiento. Puedes cambiarlo en *Ajustes → Privacidad y consentimiento de anuncios*.

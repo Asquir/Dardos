@@ -99,7 +99,7 @@ export type ServerMsg =
   | { t: 'error'; code: string; msg: string }
   | { t: 'queue_status'; waiting: number; elapsed: number }
   | { t: 'match_start'; matchId: string; config: MatchConfig; you: number; players: PublicProfile[]; state: MatchState; ranked: boolean }
-  | { t: 'state'; state: MatchState; last: { player: number; hit: Hit; event: ThrowEvent } | null; deadline: number }
+  | { t: 'state'; state: MatchState; last: { player: number; hit: Hit; event: ThrowEvent } | null; deadline: number; timeout?: boolean }
   | { t: 'emote'; player: number; id: string }
   | { t: 'opponent_status'; connected: boolean }
   | { t: 'match_end'; winner: number; reason: 'win' | 'forfeit' | 'disconnect'; trophies: number[] }

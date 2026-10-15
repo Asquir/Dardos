@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Diana Legends</string>
+    <string name="title_activity_main">Diana Legends</string>
+    <string name="package_name">com.asquir.dianalegends</string>
+    <string name="custom_url_scheme">com.asquir.dianalegends</string>
+    <!-- ID de app de AdMob. Este es el de PRUEBA de Google: cámbialo por el tuyo antes de publicar -->
+    <string name="admob_app_id">ca-app-pub-3940256099942544~3347511713</string>
+</resources>

@@ -15,7 +15,7 @@ const MM = 0.001;
 /** los dardos se ven un poco más grandes que en la realidad para que luzcan en el móvil */
 const DART_SCALE = 1.35;
 /** el dardo en la mano se ve con una cámara muy cerrada: lo reducimos para que no tape la diana */
-const HELD_SCALE = 0.62;
+const HELD_SCALE = 0.78;
 const tmpV = new THREE.Vector3();
 const tmpV2 = new THREE.Vector3();
 const Z_AXIS = new THREE.Vector3(0, 0, 1);
@@ -76,6 +76,8 @@ interface Leaving {
   delay: number;
 }
 
+/** inclina un poco hacia fuera los dardos de los lados (más natural) */
+const opts_side = (x: number) => Math.max(-1, Math.min(1, x / 0.17));
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
@@ -118,7 +120,7 @@ export class GameView implements View {
   private held: DartModel | null = null;
   private heldLook: string = '';
   private aimOpts: HumanAimOptions | null = null;
-  private aimResolve: ((r: AimResult) => void) | null = null;
+  private aimResolve: ((r: AimResult | null) => void) | null = null;
   aim = { x: 0, y: 103 };
   private dragging = false;
   private focus = 0;
@@ -133,7 +135,7 @@ export class GameView implements View {
   inputEl: HTMLElement | null = null;
 
   constructor(style: BoardStyle = 'classic') {
-    this.board = buildBoard(style, true);
+    this.board = buildBoard(style, true, engine.quality === 'high' ? 2048 : 1024);
     this.scene.add(this.board.group);
     this.reticle = buildReticle();
     this.board.group.add(this.reticle.mesh);
@@ -261,7 +263,7 @@ export class GameView implements View {
   private placeStuck(m: DartModel, xmm: number, ymm: number, seed: number) {
     const tip = this.boardPoint(xmm, ymm, -0.006);
     m.group.position.copy(tip);
-    const dir = new THREE.Vector3(Math.sin(seed) * 0.12 + 0.04, -0.12 + Math.cos(seed * 2) * 0.05, 1).normalize();
+    const dir = new THREE.Vector3(Math.sin(seed) * 0.16 + 0.04, 0.24 + Math.cos(seed * 2) * 0.05, 1).normalize();
     m.group.quaternion.setFromUnitVectors(Z_AXIS, dir);
     m.group.rotateZ(seed * 2);
     this.scene.add(m.group);
@@ -414,7 +416,7 @@ export class GameView implements View {
   }
 
   /** Activa el turno del jugador y espera a que lance. */
-  humanAim(opts: HumanAimOptions): Promise<AimResult> {
+  humanAim(opts: HumanAimOptions): Promise<AimResult | null> {
     this.aimOpts = opts;
     const key = opts.look.barrel + opts.look.shaft + opts.look.flight;
     if (!this.held || this.heldLook !== key) {
@@ -434,7 +436,9 @@ export class GameView implements View {
   }
 
   cancelAim() {
+    const pending = this.aimResolve;
     this.aimResolve = null;
+    pending?.(null);
     this.aimOpts = null;
     this.dragging = false;
     this.zoomTarget = 1;
@@ -680,8 +684,9 @@ export class GameView implements View {
         } else {
           // ligera variación de ángulo al clavarse
           const dir = tan.clone().negate();
-          dir.x += (Math.random() - 0.5) * 0.12;
-          dir.y += (Math.random() - 0.5) * 0.1 - 0.04;
+          // la cola algo levantada y ladeada para que el dardo se vea bien desde la línea de tiro
+          dir.x += (Math.random() - 0.5) * 0.22 + (opts_side(f.p2.x) * 0.06);
+          dir.y += 0.26 + (Math.random() - 0.5) * 0.08;
           dir.normalize();
           f.model.group.quaternion.setFromUnitVectors(Z_AXIS, dir);
           f.model.group.rotateZ(f.roll);

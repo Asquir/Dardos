@@ -148,15 +148,16 @@ export interface Environment {
 
 const wallCache = new Map<string, { map: THREE.Texture; normal: THREE.Texture }>();
 
-function wallTextures(theme: ArenaTheme) {
-  const key = theme.wall + theme.wallColors.join();
+function wallTextures(theme: ArenaTheme, quality: 'low' | 'medium' | 'high') {
+  const size = quality === 'high' ? 1024 : 512;
+  const key = theme.wall + theme.wallColors.join() + size;
   let w = wallCache.get(key);
   if (w) return w;
   let res: { map: HTMLCanvasElement; height: HTMLCanvasElement };
   let repeat: [number, number] = [4, 3];
   switch (theme.wall) {
     case 'brick':
-      res = brickTexture({ colors: theme.wallColors, mortar: theme.mortar ?? '#888', seed: 3 });
+      res = brickTexture({ colors: theme.wallColors, mortar: theme.mortar ?? '#888', seed: 3, size });
       repeat = [10, 6.5];
       break;
     case 'wood':
@@ -186,7 +187,7 @@ export function buildEnvironment(theme: ArenaTheme, quality: 'low' | 'medium' | 
   const updaters: ((t: number, dt: number) => void)[] = [];
 
   // Pared del fondo
-  const wt = wallTextures(theme);
+  const wt = wallTextures(theme, quality);
   const wallMat = new THREE.MeshStandardMaterial({
     map: theme.wall === 'stage' || theme.wall === 'cosmic' ? null : wt.map,
     emissive: theme.wall === 'cosmic' ? new THREE.Color('#03030a') : new THREE.Color(0),
@@ -202,7 +203,7 @@ export function buildEnvironment(theme: ArenaTheme, quality: 'low' | 'medium' | 
 
   // Suelo
   if (!floorTex) {
-    const f = woodTexture({ base: '#6a4122', dark: '#2a160a', planks: 10, seed: 44 });
+    const f = woodTexture({ base: '#6a4122', dark: '#2a160a', planks: 10, seed: 44, size: quality === 'high' ? 1024 : 512 });
     floorTex = { map: toTexture(f.map, true, [3, 3]), normal: toTexture(heightToNormal(f.height, 2), false, [3, 3]) };
   }
   const floorMat =
@@ -425,7 +426,7 @@ export function buildEnvironment(theme: ArenaTheme, quality: 'low' | 'medium' | 
         const [c, ctx] = makeCanvas(512);
         for (let k = 0; k < 18; k++) {
           const gr = ctx.createRadialGradient(r() * 512, r() * 512, 0, 256, 256, 260);
-          const col = k % 2 ? 'rgba(140,90,255,0.10)' : 'rgba(60,120,255,0.08)';
+          const col = k % 2 ? 'rgba(140,90,255,0.022)' : 'rgba(60,120,255,0.018)';
           gr.addColorStop(0, col);
           gr.addColorStop(1, 'rgba(0,0,0,0)');
           ctx.fillStyle = gr;

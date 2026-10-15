@@ -17,14 +17,14 @@ export interface BoardModel {
   setStyle(style: BoardStyle): void;
 }
 
-export function buildBoard(style: BoardStyle = 'classic', withCabinet = true): BoardModel {
+export function buildBoard(style: BoardStyle = 'classic', withCabinet = true, texSize = 2048): BoardModel {
   const group = new THREE.Group();
   group.position.set(0, BOARD_HEIGHT, 0);
 
   const getTex = (s: BoardStyle) => {
     let t = texCache.get(s);
     if (!t) {
-      t = boardTexture(s);
+      t = boardTexture(s, texSize);
       texCache.set(s, t);
     }
     return t;

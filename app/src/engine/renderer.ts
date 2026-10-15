@@ -225,13 +225,14 @@ class Engine {
   thumbnail(key: string, scene: THREE.Scene, camera: THREE.Camera, w = 160, h = 160): string {
     const hit = this.thumbCache.get(key);
     if (hit) return hit;
+    const t0 = performance.now();
     if (!this.thumbRenderer) {
-      this.thumbRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+      this.thumbRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true, powerPreference: 'low-power' });
       this.thumbRenderer.outputColorSpace = THREE.SRGBColorSpace;
       this.thumbRenderer.toneMapping = THREE.ACESFilmicToneMapping;
       this.thumbRenderer.setClearColor(0x000000, 0);
       const pmrem = new THREE.PMREMGenerator(this.thumbRenderer);
-      this.thumbEnv = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+      this.thumbEnv = pmrem.fromScene(new RoomEnvironment(), 0.04, 0.1, 100, { size: 64 }).texture;
       pmrem.dispose();
     }
     scene.environment = this.thumbEnv;
@@ -241,6 +242,7 @@ class Engine {
     this.thumbRenderer.render(scene, camera);
     const url = this.thumbRenderer.domElement.toDataURL('image/png');
     this.thumbCache.set(key, url);
+    if (location.search.includes('debug')) console.info(`[arranque] miniatura ${key.slice(0, 20)}: ${Math.round(performance.now() - t0)} ms`);
     return url;
   }
 

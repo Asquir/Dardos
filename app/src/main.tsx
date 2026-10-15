@@ -20,12 +20,16 @@ import { initPlatform, hideSplash } from './services/platform';
 import { ui, go, closeModal } from './ui/state';
 import { App } from './ui/App';
 import { currentMatch } from './game/match';
+import { initOnlineHandlers } from './game/online';
 
 const splash = document.getElementById('splash');
 const bar = document.getElementById('splash-bar');
 const progress = (v: number) => {
   if (bar) bar.style.width = Math.round(v * 100) + '%';
 };
+const DEBUG = location.search.includes('debug');
+const T0 = performance.now();
+const mark = (n: string) => DEBUG && console.info(`[arranque] ${n}: ${Math.round(performance.now() - T0)} ms`);
 const frame = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
 
 function autoQuality(): Quality {
@@ -38,15 +42,19 @@ function autoQuality(): Quality {
 async function boot() {
   progress(0.1);
   await document.fonts.load('40px "Lilita One"').catch(() => undefined);
+  mark('fuentes');
   const p = await loadProfile();
+  mark('perfil');
   progress(0.25);
   const forced = new URLSearchParams(location.search).get('q') as Quality | null;
   const q = forced ?? (p.settings.quality === 'auto' ? autoQuality() : p.settings.quality);
   engine.init(document.getElementById('gl') as HTMLCanvasElement, q);
   engine.onQualityDrop = (nq) => console.info('Calidad ajustada automáticamente a', nq);
+  mark('motor');
   await frame();
   // genera texturas y la escena principal (lo más pesado)
   const v = gameView();
+  mark('diana');
   progress(0.55);
   await frame();
   v.setArena(p.selectedArena);
@@ -54,6 +62,7 @@ async function boot() {
   v.setMenuMode(true);
   engine.setView(v);
   engine.start();
+  mark('arena');
   progress(0.8);
   ensureDaily();
   audio.setVolumes(p.settings.sfx, p.settings.music);
@@ -96,6 +105,7 @@ async function boot() {
   });
   if (!p.tutorial.done && !p.tutorial.tips.includes('match')) go('onboarding');
   render(<App />, document.getElementById('app')!);
+  mark('interfaz');
   progress(1);
   await frame();
   splash?.classList.add('hide');
@@ -104,9 +114,10 @@ async function boot() {
   // servicios externos sin bloquear el arranque
   void ads.init(p.settings.personalizedAds);
   void iap.init(p.id);
+  initOnlineHandlers();
   if (net.enabled()) net.connect();
   setInterval(() => ensureDaily(), 60_000);
-  (window as unknown as { __diana: unknown }).__diana = { profile, go, currentMatch, engine, gameView };
+  (window as unknown as { __diana: unknown }).__diana = { profile, go, currentMatch, engine, gameView, ui };
 }
 
 boot().catch((e) => {

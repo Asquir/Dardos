@@ -45,7 +45,6 @@ import { net } from '../../services/net';
 import { restorePurchases } from '../purchase';
 import { cleanName } from '@shared/text';
 import { haptics as hap } from '../../services/haptics';
-import { gameView } from '../../engine/gameView';
 
 export function ModalHost() {
   const s = useStore(ui);
@@ -656,6 +655,14 @@ function SettingsModal() {
         <button class="btn small dark" onClick={() => ads.showPrivacyOptions()}>
           Privacidad y consentimiento de anuncios
         </button>
+        <div class="row">
+          <button class="btn small dark grow" onClick={() => window.open((import.meta.env.VITE_PRIVACY_URL as string) || 'https://github.com/Asquir/Dardos/blob/main/docs/PRIVACIDAD.md', '_blank')}>
+            Política de privacidad
+          </button>
+          <button class="btn small dark grow" onClick={() => window.open((import.meta.env.VITE_TERMS_URL as string) || 'https://github.com/Asquir/Dardos/blob/main/docs/TERMINOS.md', '_blank')}>
+            Términos
+          </button>
+        </div>
         <button class="btn small dark" onClick={() => restorePurchases()}>
           Restaurar compras
         </button>
@@ -688,7 +695,6 @@ function SettingsModal() {
         </button>
         <div class="muted" style={{ textAlign: 'center', fontSize: '11px', fontWeight: 700 }}>
           Diana Legends v1.0 · ID {p.serverId ?? p.id.slice(0, 8)}
-          {gameView() ? '' : ''}
         </div>
       </div>
     </Modal>

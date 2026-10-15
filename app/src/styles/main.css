@@ -1546,7 +1546,7 @@ img {
 
 .hint {
   position: absolute;
-  bottom: calc(var(--safe-bottom) + 76px);
+  bottom: calc(var(--safe-bottom) + 14px);
   left: 0;
   right: 0;
   text-align: center;
@@ -1559,7 +1559,8 @@ img {
 
 .hint .box {
   display: inline-block;
-  max-width: 92%;
+  max-width: calc(100% - 140px);
+  font-size: 12px;
   padding: 8px 14px;
   border-radius: 14px;
   background: rgba(10, 14, 40, 0.78);

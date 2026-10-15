@@ -207,6 +207,11 @@ export class Match {
       assist: this.setup.assist,
     });
     if (this.aborted) return;
+    if (!shot) {
+      // turno agotado (online): aplicamos el estado del servidor
+      if (this.setup.online) await this.remoteStep();
+      return;
+    }
     this.ui.phase = 'wait';
     this.ui.quality = { id: uid++, q: shot.quality };
     this.emit();
@@ -373,6 +378,7 @@ export class Match {
     this.offs.push(
       net.on('state', (m) => {
         this.remoteQueue.push(m);
+        if (m.timeout && m.last?.player === this.you && this.view.isAiming) this.view.cancelAim();
         this.remoteWake?.();
       }),
       net.on('match_end', (m) => {
@@ -423,6 +429,12 @@ export class Match {
     if (m.t === 'match_end') return this.handleRemoteEnd(m);
     if (m.t !== 'state') return;
     this.ui.deadline = m.deadline;
+    if (m.timeout && m.last) {
+      this.ui.state = m.state;
+      this.say('red', '¡TIEMPO!', m.last.player === this.you ? 'Se te acabó el tiempo' : 'Tu rival no lanzó a tiempo');
+      await this.afterThrow(m.last.event, 0, m.last.player);
+      return;
+    }
     if (m.last && m.last.player !== this.you) {
       const pl = this.setup.players[m.last.player];
       audio.whoosh();

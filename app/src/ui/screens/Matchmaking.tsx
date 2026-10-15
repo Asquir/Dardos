@@ -4,10 +4,10 @@ import { useEffect, useState } from 'preact/hooks';
 import { useStore, fmtNum } from '../../core/store';
 import { ui, go, toast, closeModal } from '../state';
 import { net, onlineCount, publicProfile } from '../../services/net';
-import { profile, mutate } from '../../meta/profile';
+import { profile } from '../../meta/profile';
 import { ARENAS } from '../../meta/arenas';
-import { startMatch, type MatchSetup } from '../../game/match';
-import { humanPlayer, remotePlayer, rankedSetup, launch } from '../../game/launch';
+import { rankedSetup, launch } from '../../game/launch';
+import { startOnline } from '../../game/online';
 import { AvatarImg, Modal } from '../components/common';
 import { audio } from '../../services/audio';
 import { shareText } from '../../services/platform';
@@ -29,26 +29,7 @@ export function Matchmaking() {
       setElapsed(Math.floor((Date.now() - t0) / 1000));
       setDots((d) => (d + 1) % 4);
     }, 500);
-    const offStart = net.on('match_start', (m) => {
-      const you = m.you;
-      const ranked = m.ranked;
-      if (ranked) mutate((p) => (p.coins -= arena.entry));
-      const players = m.players.map((pp, i) => (i === you ? humanPlayer() : remotePlayer(pp)));
-      const setup: MatchSetup = {
-        type: ranked ? 'online' : 'private',
-        config: m.config,
-        arena: arenaId,
-        players,
-        starter: m.state.current,
-        entry: ranked ? arena.entry : 0,
-        prize: ranked ? arena.prize : 0,
-        online: { matchId: m.matchId, you, ranked },
-        title: ranked ? arena.name : 'Sala privada',
-      };
-      audio.levelUp();
-      go('game');
-      startMatch(setup, m.state);
-    });
+    const offStart = net.on('match_start', (m) => startOnline(m, arenaId));
     const offRoom = net.on('room_created', (m) => setCode(m.code));
     const offErr = net.on('error', (m) => {
       toast(m.msg, 'bad');

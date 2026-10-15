@@ -1,0 +1,119 @@
+# Compila y prueba Diana Legends en cada push:
+#  - tests y comprobación de tipos
+#  - APK de Android (descargable en la pestaña "Actions" → Artifacts) y AAB firmado si hay claves
+#  - compilación de iOS para simulador (comprueba que el proyecto nativo compila)
+name: Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+        env:
+          VITE_SERVER_URL: ${{ vars.VITE_SERVER_URL }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: app/dist
+
+  android:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - run: npm ci
+      - name: Compilar web y sincronizar con Android
+        working-directory: app
+        env:
+          VITE_SERVER_URL: ${{ vars.VITE_SERVER_URL }}
+          VITE_ADMOB_ANDROID_BANNER: ${{ vars.VITE_ADMOB_ANDROID_BANNER }}
+          VITE_ADMOB_ANDROID_INTERSTITIAL: ${{ vars.VITE_ADMOB_ANDROID_INTERSTITIAL }}
+          VITE_ADMOB_ANDROID_REWARDED: ${{ vars.VITE_ADMOB_ANDROID_REWARDED }}
+          VITE_ADMOB_TESTING: ${{ vars.VITE_ADMOB_TESTING }}
+          VITE_REVENUECAT_ANDROID_KEY: ${{ vars.VITE_REVENUECAT_ANDROID_KEY }}
+          VITE_PRIVACY_URL: ${{ vars.VITE_PRIVACY_URL }}
+        run: npx vite build && npx cap sync android
+      - name: APK de prueba (debug)
+        working-directory: app/android
+        run: chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: diana-legends-debug-apk
+          path: app/android/app/build/outputs/apk/debug/*.apk
+      - name: AAB firmado para Google Play (si hay keystore en los secretos)
+        if: ${{ env.KEYSTORE_B64 != '' }}
+        working-directory: app/android
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > release.keystore
+          ./gradlew bundleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file=$PWD/release.keystore \
+            -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
+      - uses: actions/upload-artifact@v4
+        if: ${{ hashFiles('app/android/app/build/outputs/bundle/release/*.aab') != '' }}
+        with:
+          name: diana-legends-release-aab
+          path: app/android/app/build/outputs/bundle/release/*.aab
+    env:
+      KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+
+  ios:
+    needs: test
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Compilar web y sincronizar con iOS
+        working-directory: app
+        env:
+          VITE_SERVER_URL: ${{ vars.VITE_SERVER_URL }}
+          VITE_ADMOB_IOS_BANNER: ${{ vars.VITE_ADMOB_IOS_BANNER }}
+          VITE_ADMOB_IOS_INTERSTITIAL: ${{ vars.VITE_ADMOB_IOS_INTERSTITIAL }}
+          VITE_ADMOB_IOS_REWARDED: ${{ vars.VITE_ADMOB_IOS_REWARDED }}
+          VITE_ADMOB_TESTING: ${{ vars.VITE_ADMOB_TESTING }}
+          VITE_REVENUECAT_IOS_KEY: ${{ vars.VITE_REVENUECAT_IOS_KEY }}
+          VITE_PRIVACY_URL: ${{ vars.VITE_PRIVACY_URL }}
+        run: npx vite build && npx cap sync ios
+      - name: Compilar para el simulador (sin firma)
+        working-directory: app/ios/App
+        run: xcodebuild -project App.xcodeproj -scheme App -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build | tail -40
+
+  server-image:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Construir imagen Docker del servidor
+        run: docker build -f server/Dockerfile -t diana-legends-server .

@@ -14,3 +14,4 @@ app/ios/DerivedData/
 *.jks
 .env
 .env.local
+app/dist-demo/

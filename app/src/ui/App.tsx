@@ -7,7 +7,7 @@ import { xpForNext } from '../meta/progression';
 import { ui, go, openModal, type ScreenName } from './state';
 import { IconDefs, Coin, Gem, Gear, ShopIco, DartIco, TargetIco, SocialIco, EventsIco, Plus } from './icons';
 import { AvatarImg } from './components/common';
-import { fmtNum } from '../core/store';
+import { fmtNum, dayKey } from '../core/store';
 import { engine } from '../engine/renderer';
 import { gameView } from '../engine/gameView';
 import { previewView } from '../engine/previewView';
@@ -184,7 +184,7 @@ function Nav({ current }: { current: ScreenName }) {
   const upgrades = ALL_ITEMS.filter((i) => upgradeInfo(p, i.id).can).length;
   const shopBadge = p.shop.offers.some((o) => o.kind === 'free' && !o.bought) ? 1 : 0;
   const homeBadge = (dailyAvailable(p) ? 1 : 0) + p.missions.list.filter((m) => !m.claimed && m.progress >= m.target).length + (freeChestsAvailable(p) > 0 ? 1 : 0);
-  const eventsBadge = p.challenge.day !== new Date().toDateString() ? 1 : 0;
+  const eventsBadge = p.level >= 2 && p.challenge.day !== dayKey() ? 1 : 0;
   const socialBadge = claimableAchievements(p).length ? 0 : 0;
   const badges: Record<string, number> = { shop: shopBadge, collection: upgrades, home: current === 'home' ? 0 : homeBadge, events: eventsBadge, social: socialBadge };
   return (

@@ -533,7 +533,7 @@ export class GameView implements View {
   private swayAt(t: number): { x: number; y: number } {
     const o = this.aimOpts!;
     const assist = o.assist ?? 0;
-    const amp = lerp(15, 3, clamp(o.stats.stab / 100, 0, 1)) * (1 - 0.6 * this.focus) * (1 - assist);
+    const amp = lerp(18, 3, clamp(o.stats.stab / 100, 0, 1)) * (1 - 0.6 * this.focus) * (1 - assist);
     const p = this.swayPh;
     const n = (a: number, b: number) => Math.sin(t * 1.3 + a) * 0.6 + Math.sin(t * 2.9 + b) * 0.3 + Math.sin(t * 6.1 + a + b) * 0.1;
     return { x: n(p[0], p[1]) * amp, y: n(p[2], p[3]) * amp };
@@ -542,7 +542,7 @@ export class GameView implements View {
   private sigma(): number {
     const o = this.aimOpts!;
     const assist = o.assist ?? 0;
-    return lerp(11, 2.6, clamp(o.stats.acc / 100, 0, 1)) * (1.25 - 0.45 * this.focus) * (1 - assist * 0.7);
+    return lerp(14, 2.6, clamp(o.stats.acc / 100, 0, 1)) * (1.25 - 0.45 * this.focus) * (1 - assist * 0.7);
   }
 
   private release(vy: number, vx: number, tapped: boolean) {

@@ -231,7 +231,7 @@ export class GameView implements View {
   private flying: Flying[] = [];
   /** trayectorias de los últimos dardos (para las repeticiones) */
   private flightLog: FlightRec[] = [];
-  private replay: { recs: FlightRec[]; i: number; t: number; hold: number; roll: number; ghost: DartModel | null; resolve: () => void } | null = null;
+  private replay: { recs: FlightRec[]; i: number; t: number; hold: number; roll: number; ghost: DartModel | null; resolve: () => void; total?: number } | null = null;
   private replayW = 0;
   private replayPos = new THREE.Vector3();
   private replayLook = new THREE.Vector3();
@@ -632,10 +632,13 @@ export class GameView implements View {
 
   private updateReplay(dt: number) {
     const target = this.replay ? 1 : 0;
-    this.replayW += (target - this.replayW) * Math.min(1, dt * 5);
+    this.replayW += (target - this.replayW) * Math.min(1, dt * 4);
     const R = this.replay;
     if (!R) return;
-    const real = dt / Math.max(0.05, engine.timeScale);
+    const real = Math.min(0.05, dt / Math.max(0.05, engine.timeScale));
+    // red de seguridad: una repetición nunca dura más de 6 s
+    R.total = (R.total ?? 0) + real;
+    if (R.total > 6) return this.finishReplay();
     const rec = R.recs[R.i];
     if (!R.ghost) {
       rec.model.group.visible = false;
@@ -644,45 +647,47 @@ export class GameView implements View {
       this.scene.add(R.ghost.group);
       R.t = 0;
       R.hold = 0;
-      this.grade = { ...this.baseGrade, saturation: (this.baseGrade.saturation ?? 1) * 0.8, vignette: (this.baseGrade.vignette ?? 0.45) + 0.18, aberration: 0.35 };
+      this.grade = { ...this.baseGrade, saturation: (this.baseGrade.saturation ?? 1) * 0.85, vignette: (this.baseGrade.vignette ?? 0.45) + 0.12 };
     }
-    // a un tercio de la velocidad real
-    R.t = Math.min(1, R.t + (real * 0.36) / rec.dur);
-    const k = R.t;
-    const p = tmpV.set(0, 0, 0).addScaledVector(rec.p0, (1 - k) * (1 - k)).addScaledVector(rec.p1, 2 * (1 - k) * k).addScaledVector(rec.p2, k * k);
-    const tan = tmpV2.set(0, 0, 0).addScaledVector(rec.p1.clone().sub(rec.p0), 2 * (1 - k)).addScaledVector(rec.p2.clone().sub(rec.p1), 2 * k).normalize();
-    if (k < 1) {
+    const p2 = rec.p2;
+    if (R.hold === 0) {
+      // vuelo a un tercio de la velocidad real
+      R.t = Math.min(1, R.t + (real * 0.36) / rec.dur);
+      const k = R.t;
+      const p = tmpV.set(0, 0, 0).addScaledVector(rec.p0, (1 - k) * (1 - k)).addScaledVector(rec.p1, 2 * (1 - k) * k).addScaledVector(p2, k * k);
+      const tan = tmpV2.set(0, 0, 0).addScaledVector(rec.p1.clone().sub(rec.p0), 2 * (1 - k)).addScaledVector(p2.clone().sub(rec.p1), 2 * k).normalize();
+      R.ghost.group.visible = true;
       R.ghost.group.position.copy(p);
       R.ghost.group.quaternion.setFromUnitVectors(Z_AXIS, tan.clone().negate());
       R.roll += real * 3.5;
       R.ghost.group.rotateZ(R.roll);
-      // cámara de lado que persigue el dardo y se adelanta un poco hacia la diana
-      this.replayPos.set(p.x + 0.16, p.y + 0.05, p.z + 0.12);
-      this.replayLook.copy(p).lerp(rec.p2, 0.35);
-    } else {
-      if (R.hold === 0) {
+      // cámara de diana (como en la tele): fija al lado del objetivo, se acerca mientras llega el dardo
+      const e = k * k * (3 - 2 * k);
+      this.replayPos.set(p2.x + 0.3 - 0.14 * e, p2.y + 0.07 - 0.03 * e, p2.z + 0.62 - 0.3 * e);
+      this.replayLook.copy(p2).lerp(p, 0.3 * (1 - e));
+      if (k >= 1) {
         // impacto: aparece el dardo de verdad, chispas y sacudida
-        R.ghost.dispose();
-        R.ghost = null;
+        R.ghost.group.visible = false;
         rec.model.group.visible = true;
-        this.sparkBurst(rec.p2, 24, '#ffffff', 0.9);
-        this.puff(rec.p2);
-        this.shake = Math.max(this.shake, 0.45);
+        this.sparkBurst(p2, 24, '#ffffff', 0.9);
+        this.puff(p2);
+        this.shake = Math.max(this.shake, 0.4);
         R.hold = 0.0001;
-        // se queda un instante mirando el dardo clavado
-        this.replayPos.set(rec.p2.x + 0.07, rec.p2.y + 0.03, rec.p2.z + 0.22);
-        this.replayLook.copy(rec.p2);
-        return;
       }
-      R.hold += real;
-      if (R.hold > 0.8) {
-        if (R.i + 1 < R.recs.length) {
-          R.i++;
-          R.ghost = null;
-        } else this.finishReplay();
-      }
+      return;
+    }
+    // se queda un instante mirando el dardo clavado
+    R.hold += real;
+    this.replayPos.set(p2.x + 0.12, p2.y + 0.035, p2.z + 0.26);
+    this.replayLook.copy(p2);
+    if (R.hold > 0.9) {
+      R.ghost.dispose();
+      R.ghost = null;
+      if (R.i + 1 < R.recs.length) R.i++;
+      else this.finishReplay();
     }
   }
+
 
   /** Recoge los dardos clavados (al final del turno). */
   clearDarts(): Promise<void> {

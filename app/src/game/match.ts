@@ -598,6 +598,9 @@ export class Match {
   }
 
   private async playReplay() {
+    // el premio ya se ha visto: la repetición va limpia, sin el emblema encima
+    this.ui.award = null;
+    this.ui.message = null;
     this.ui.replay = true;
     this.emit();
     await this.view.replayLast(1);
@@ -748,7 +751,7 @@ export class Match {
         if (event === 'matchWon') {
           // el dardo que gana la partida, otra vez a cámara lenta
           if (closed && this.replaysOn) {
-            await sleep(1100);
+            await sleep(tier >= 2 ? 2300 : 1300);
             if (this.aborted) return;
             await this.playReplay();
             await sleep(500);
@@ -760,9 +763,9 @@ export class Match {
         }
       }
       if (!human && this.setup.players[idx].kind === 'bot' && turnTotal >= 100) this.botReact('go', 0.35);
-      // los momentazos (180, Big Fish, Hat Trick…) se repiten
+      // los momentazos (180, Big Fish, Hat Trick…) se repiten cuando ya se ha visto el premio
       if (tier >= 3 && this.replaysOn) {
-        await sleep(1300);
+        await sleep(2300);
         if (this.aborted) return;
         await this.playReplay();
       }

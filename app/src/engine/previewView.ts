@@ -141,7 +141,9 @@ export class PreviewView implements View {
       this.reflector.position.y = floorY;
       this.scene.add(this.reflector);
     } else {
-      const floor = new THREE.Mesh(new THREE.PlaneGeometry(3, 3), new THREE.MeshPhysicalMaterial({ color: 0x10142c, roughness: 0.25, metalness: 0.4, clearcoat: 1 }));
+      // suelo sin iluminar: un plano tan grande mirando hacia arriba recibía toda la luz del entorno
+      // (sobre todo el techo) y llenaba el fondo de neblina blanca en calidad media y baja
+      const floor = new THREE.Mesh(new THREE.PlaneGeometry(3, 3), new THREE.MeshBasicMaterial({ color: 0x0a0d22 }));
       floor.rotation.x = -Math.PI / 2;
       floor.position.y = floorY;
       this.scene.add(floor);

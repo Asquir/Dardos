@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { useStore, fmtNum } from '../../core/store';
 import { profileStore, mutate } from '../../meta/profile';
-import { BARRELS, SHAFTS, FLIGHTS, BOARD_SKINS, EMOTES, RARITY_INFO, getItem, statsAt, type ItemDef, type Slot } from '../../meta/catalog';
+import { BARRELS, SHAFTS, FLIGHTS, BOARD_SKINS, EMOTES, RARITY_INFO, getItem, statsAt, type ItemDef, type Slot, type Stats } from '../../meta/catalog';
 import { upgradeInfo, dartStats, equip, upgrade, buyCosmetic, saveLoadout, useLoadout } from '../../meta/economy';
 import { previewView } from '../../engine/previewView';
 import { ItemThumb, Modal, Price, useDragRotate } from '../components/common';
@@ -29,6 +29,50 @@ const TAB_TITLE: Record<Slot, string> = { barrel: 'Tus cuerpos', shaft: 'Tus ca�
 /** Poder total del dardo (suma de las tres estadísticas). */
 export function dartPower(st: { acc: number; stab: number; ctrl: number }) {
   return Math.round(st.acc + st.stab + st.ctrl);
+}
+
+/** Poder de una sola pieza a su nivel actual (lo que aporta al poder del dardo). */
+function piecePower(p: { items: Record<string, { level: number }> }, id: string) {
+  const st = statsAt(getItem(id), p.items[id]?.level ?? 1);
+  return st.acc + st.stab + st.ctrl;
+}
+
+const STAT_KEYS: ['acc' | 'stab' | 'ctrl', string, string][] = [
+  ['acc', '🎯 Precisión', 'linear-gradient(90deg,#ff7a8f,#e0123a)'],
+  ['stab', '🧘 Estabilidad', 'linear-gradient(90deg,#8fd0ff,#2a7dff)'],
+  ['ctrl', '✋ Control', 'linear-gradient(90deg,#9dffbf,#16a34a)'],
+];
+const STAT_WORD = { acc: 'precisión', stab: 'estabilidad', ctrl: 'control' } as const;
+
+/** Veredicto claro frente a la pieza que llevas: mejor / peor / igual, y en qué gana y en qué pierde. */
+function CompareBox({ name, level, slot, cur, eq, mine, tried }: { name: string; level: number; slot: Slot; cur: Stats; eq: Stats; mine: number; tried: number }) {
+  const diff = tried - mine;
+  const ups = STAT_KEYS.filter(([k]) => cur[k] - eq[k] >= 0.2).map(([k]) => STAT_WORD[k]);
+  const downs = STAT_KEYS.filter(([k]) => eq[k] - cur[k] >= 0.2).map(([k]) => STAT_WORD[k]);
+  const verdict = diff > 0 ? 'up' : diff < 0 ? 'down' : 'eqv';
+  const join = (a: string[]) => (a.length > 1 ? a.slice(0, -1).join(', ') + ' y ' + a[a.length - 1] : a[0]);
+  const detail = ups.length && downs.length ? `Ganas ${join(ups)}, pierdes ${join(downs)}` : ups.length ? `Más ${join(ups)}` : downs.length ? `Menos ${join(downs)}` : 'Las mismas estadísticas';
+  return (
+    <div class={'is-vs ' + verdict}>
+      <div class="is-vs-top">
+        <span class="verdict">{verdict === 'up' ? '⬆ MEJOR' : verdict === 'down' ? '⬇ PEOR' : '= IGUAL'}</span>
+        <span class="vs-name">
+          que tu {SLOT_LABEL[slot].toLowerCase()} <b>{name}</b> Nv.{level}
+        </span>
+      </div>
+      <div class="is-vs-detail">{detail}</div>
+      <div class="is-vs-power">
+        <span>Poder del dardo</span>
+        <b>
+          ⚡ {mine} → {tried}{' '}
+          <em>
+            ({diff > 0 ? '+' : ''}
+            {diff})
+          </em>
+        </b>
+      </div>
+    </div>
+  );
 }
 
 /** Rareza más alta del dardo equipado (para los efectos de la vitrina). */
@@ -66,12 +110,12 @@ export function Collection() {
   };
   const st = dartStats(p);
   const base: ItemDef[] = tab === 'barrel' ? BARRELS : tab === 'shaft' ? SHAFTS : tab === 'flight' ? FLIGHTS : [];
-  // primero lo equipado, luego lo que se puede mejorar, lo tuyo por rareza y al final lo bloqueado
+  // primero lo equipado, luego lo que se puede mejorar, lo tuyo de más a menos poder y al final lo bloqueado
   const list = [...base].sort((a, b) => {
     const ua = upgradeInfo(p, a.id);
     const ub = upgradeInfo(p, b.id);
     const score = (it: ItemDef, u: ReturnType<typeof upgradeInfo>) => (p.equipped[it.slot] === it.id ? 0 : u.can ? 1 : u.owned ? 2 : 3);
-    return score(a, ua) - score(b, ub) || RARITY_ORDER[a.rarity] - RARITY_ORDER[b.rarity] || a.arena - b.arena;
+    return score(a, ua) - score(b, ub) || (ua.owned && ub.owned ? piecePower(p, b.id) - piecePower(p, a.id) : 0) || RARITY_ORDER[a.rarity] - RARITY_ORDER[b.rarity] || a.arena - b.arena;
   });
   const owned = base.filter((i) => p.items[i.id]).length;
   const upgradable = (slot: Slot) => (slot === 'barrel' ? BARRELS : slot === 'shaft' ? SHAFTS : FLIGHTS).filter((i) => upgradeInfo(p, i.id).can).length;
@@ -184,7 +228,7 @@ function ScoreNum({ value }: { value: number }) {
   return <span class="score-num" key={value}>{shown}</span>;
 }
 
-function StatRow({ label, v, color, next, delta }: { label: string; v: number; color: string; next?: number; delta?: number }) {
+function StatRow({ label, v, color, next, delta, mark }: { label: string; v: number; color: string; next?: number; delta?: number; mark?: number }) {
   return (
     <>
       <div class="stat-name">{label}</div>
@@ -192,6 +236,8 @@ function StatRow({ label, v, color, next, delta }: { label: string; v: number; c
         {next !== undefined && next > v && <i class="next" style={{ width: Math.min(100, next) + '%' }} />}
         <i style={{ width: Math.min(100, v) + '%', background: color }} />
         <b class="stat-shine" />
+        {/* raya blanca: dónde está la pieza que llevas puesta */}
+        {mark !== undefined && <u class="stat-mark" style={{ left: Math.min(99, mark) + '%' }} />}
       </div>
       <div class="stat-val">
         {Math.round(v)}
@@ -206,6 +252,7 @@ function ItemCard({ it, i }: { it: ItemDef; i: number }) {
   const u = upgradeInfo(p, it.id);
   const equipped = p.equipped[it.slot] === it.id;
   const pct = u.owned ? (u.max ? 100 : Math.min(100, (u.cards / u.need) * 100)) : 0;
+  const diff = equipped ? 0 : piecePower(p, it.id) - piecePower(p, p.equipped[it.slot]);
   return (
     <button
       class={`item ${it.rarity}${u.owned ? '' : ' locked'}${equipped ? ' equipped' : ''}${u.can ? ' can' : ''}`}
@@ -214,9 +261,14 @@ function ItemCard({ it, i }: { it: ItemDef; i: number }) {
     >
       <span class="pedestal" />
       {u.owned && <span class="lv">Nv.{u.level}</span>}
-      {equipped && (
+      {equipped ? (
         <span class="eq">
           <Check />
+        </span>
+      ) : (
+        <span class={'pw ' + (diff >= 0.5 ? 'up' : diff <= -0.5 ? 'down' : 'eqv') + (u.owned ? '' : ' dim')} title="Frente a la pieza que llevas">
+          {diff >= 0.5 ? '▲' : diff <= -0.5 ? '▼' : '='}
+          {Math.abs(diff) >= 0.5 ? Math.round(Math.abs(diff)) : ''}
         </span>
       )}
       <ItemThumb id={it.id} />
@@ -254,6 +306,13 @@ export function ItemModal({ id }: { id: string }) {
   // estadísticas del dardo completo con esta pieza montada, frente a las actuales
   const mine = dartStats(p);
   const tried = dartStats(p, { ...p.equipped, [def.slot]: id });
+  // la pieza que llevas puesta en este hueco, para comparar estadística a estadística
+  const eqId = p.equipped[def.slot];
+  const eqDef = getItem(eqId);
+  const eqSt = statsAt(eqDef, p.items[eqId]?.level ?? 1);
+  const cmp = !equipped;
+  const fxTimer = useRef(0);
+  useEffect(() => () => clearTimeout(fxTimer.current), []);
 
   // probador: la pieza aparece montada en la vitrina mientras la ficha está abierta
   useEffect(() => {
@@ -282,7 +341,8 @@ export function ItemModal({ id }: { id: string }) {
     confetti(110);
     previewView().celebrate();
     setFx({ from: u.level, to: u.level + 1, key: Date.now() });
-    setTimeout(() => setFx(null), 2200);
+    clearTimeout(fxTimer.current);
+    fxTimer.current = window.setTimeout(() => setFx(null), 2200);
     net.syncProfile();
   };
   const close = () => (audio.click(), closeModal());
@@ -319,18 +379,19 @@ export function ItemModal({ id }: { id: string }) {
         </div>
 
         <div class="panel stats-panel" style={{ margin: '10px 0 0' }}>
-          <StatRow label="🎯 Precisión" v={cur.acc * 2.5} next={u.owned && !u.max ? nxt.acc * 2.5 : undefined} color="linear-gradient(90deg,#ff7a8f,#e0123a)" />
-          <StatRow label="🧘 Estabilidad" v={cur.stab * 2.5} next={u.owned && !u.max ? nxt.stab * 2.5 : undefined} color="linear-gradient(90deg,#8fd0ff,#2a7dff)" />
-          <StatRow label="✋ Control" v={cur.ctrl * 2.5} next={u.owned && !u.max ? nxt.ctrl * 2.5 : undefined} color="linear-gradient(90deg,#9dffbf,#16a34a)" />
+          {STAT_KEYS.map(([k, label, color]) => (
+            <StatRow
+              key={k}
+              label={label}
+              v={cur[k] * 2.5}
+              next={u.owned && !u.max ? nxt[k] * 2.5 : undefined}
+              color={color}
+              delta={cmp ? (cur[k] - eqSt[k]) * 2.5 : undefined}
+              mark={cmp ? eqSt[k] * 2.5 : undefined}
+            />
+          ))}
         </div>
-        {!equipped && (
-          <div class="is-compare">
-            <span>Con esta pieza tu dardo:</span>
-            <b class={dartPower(tried) >= dartPower(mine) ? 'up' : 'down'}>
-              ⚡ {dartPower(mine)} → {dartPower(tried)}
-            </b>
-          </div>
-        )}
+        {cmp && <CompareBox name={eqDef.name} level={p.items[eqId]?.level ?? 1} slot={def.slot} cur={cur} eq={eqSt} mine={dartPower(mine)} tried={dartPower(tried)} />}
         {u.owned && !u.max && (
           <div class="is-cards">
             <div class={'cardbar' + (u.enoughCards ? ' full' : '')}>

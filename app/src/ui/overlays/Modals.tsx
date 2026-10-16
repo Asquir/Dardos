@@ -682,6 +682,16 @@ function SettingsModal() {
       {row('Zona objetivo y cierres', <Toggle on={s.showCheckout} onChange={(v) => set('showCheckout', v)} />)}
       {row('Sorteo al bull para empezar', <Toggle on={s.bullOff !== false} onChange={(v) => set('bullOff', v)} />)}
       {row('Repeticiones de los grandes momentos', <Toggle on={s.replays !== false} onChange={(v) => set('replays', v)} />)}
+      <div style={{ padding: '9px 0', borderBottom: '1px solid var(--stroke)' }}>
+        <div style={{ fontWeight: 800, marginBottom: '6px' }}>Tiempo por tirada</div>
+        <div class="seg">
+          {[0, 10, 15, 25].map((v) => (
+            <button key={v} class={(s.shotClock ?? 15) === v ? 'on' : ''} onClick={() => set('shotClock', v)}>
+              {v ? v + ' s' : 'Sin límite'}
+            </button>
+          ))}
+        </div>
+      </div>
       {row('Zurdo', <Toggle on={s.leftHanded} onChange={(v) => set('leftHanded', v)} />)}
       <div style={{ padding: '9px 0', borderBottom: '1px solid var(--stroke)' }}>
         <div style={{ fontWeight: 800, marginBottom: '6px' }}>Lanzamiento</div>

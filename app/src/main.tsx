@@ -20,6 +20,7 @@ import { initPlatform, hideSplash } from './services/platform';
 import { ui, go, closeModal } from './ui/state';
 import { App } from './ui/App';
 import { currentMatch } from './game/match';
+import { claim } from './ui/rewards';
 import { initOnlineHandlers } from './game/online';
 import { startAlerts, syncNotifications } from './ui/alerts';
 
@@ -145,7 +146,7 @@ async function boot() {
   startAlerts();
   if (net.enabled()) net.connect();
   setInterval(() => ensureDaily(), 60_000);
-  (window as unknown as { __diana: unknown }).__diana = { profile, go, currentMatch, engine, gameView, ui };
+  (window as unknown as { __diana: unknown }).__diana = { profile, go, currentMatch, engine, gameView, ui, claim };
 }
 
 boot().catch((e) => {

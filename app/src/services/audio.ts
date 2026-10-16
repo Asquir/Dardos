@@ -477,6 +477,66 @@ class AudioEngine {
     [2093, 2637, 3136].forEach((f, i) => this.bell(f, 0.04, 0.35 + i * 0.05, this.uiBus, 1));
     this.cymbal(1.4, 0.06, 0.05);
   }
+  /** El cofre cae al suelo: golpe sordo de madera con tintineo de herrajes. */
+  chestLand() {
+    this.tone(78, 0.22, 'sine', 0.55, 0, this.sfx, 42, 0.001);
+    this.noiseBurst(0.12, 'lowpass', 520, 0.8, 0.34, 0, this.sfx, 180, 0.001);
+    this.noiseBurst(0.08, 'bandpass', 1500, 4, 0.08, 0.02);
+    this.bell(1760 + Math.random() * 200, 0.025, 0.03, this.sfx, 0.35);
+  }
+  /** Cada toque al cofre cerrado: golpe + crujido + una nota que sube con la carga (0…1). */
+  chestCharge(level: number) {
+    this.chestShake();
+    const f = 220 * Math.pow(2, level * 1.1);
+    this.tone(f, 0.16, 'triangle', 0.07, 0.01, this.uiBus, f * 1.5, 0.004);
+    this.tone(f * 2, 0.12, 'sine', 0.03, 0.03, this.uiBus);
+    // traqueteo de la tapa
+    for (let i = 0; i < 2 + Math.round(level * 3); i++) this.noiseBurst(0.025, 'bandpass', 900 + Math.random() * 900, 5, 0.07, 0.04 + i * 0.045);
+    if (level > 0.5) this.sparkle(level * 0.6);
+  }
+  /** Carta que sale disparada del cofre. */
+  cardWhoosh() {
+    this.noiseBurst(0.22, 'bandpass', 700, 1.1, 0.1, 0, this.uiBus, 4800, 0.03);
+  }
+  /** La carta se da la vuelta. */
+  cardFlip() {
+    this.noiseBurst(0.035, 'highpass', 2600, 0.8, 0.12, 0, this.uiBus, undefined, 0.001);
+    this.tone(900, 0.05, 'sine', 0.06, 0, this.uiBus, 1500, 0.001);
+  }
+  /** Suspense antes de una carta épica o legendaria: latidos, zumbido que sube y brillos. */
+  suspense(dur: number, legendary: boolean) {
+    if (!this.ctx) return;
+    const beats = Math.max(2, Math.round(dur / 0.32));
+    for (let i = 0; i < beats; i++) {
+      const at = i * (dur / beats);
+      this.tone(60, 0.1, 'sine', 0.45, at, this.uiBus, 40, 0.004);
+      this.tone(56, 0.12, 'sine', 0.3, at + 0.13, this.uiBus, 36, 0.004);
+    }
+    this.noiseBurst(dur, 'bandpass', 300, 2.5, 0.1, 0, this.uiBus, legendary ? 6000 : 4200, dur * 0.95, true);
+    this.tone(legendary ? 196 : 174, dur, 'sawtooth', 0.022, 0, this.uiBus, legendary ? 784 : 622, dur * 0.9);
+    for (let i = 0; i < 8; i++) this.bell(2400 + i * 260, 0.012 + i * 0.003, (dur * i) / 8, this.uiBus, 0.3);
+  }
+  /** Sello de «¡Mejorable!»: golpe seco y campanilla. */
+  stamp() {
+    this.tone(150, 0.1, 'sine', 0.35, 0, this.uiBus, 80, 0.001);
+    this.noiseBurst(0.05, 'lowpass', 1200, 0.8, 0.2, 0, this.uiBus, undefined, 0.001);
+    this.bell(1568, 0.05, 0.05, this.uiBus, 0.7);
+    this.bell(2349, 0.045, 0.11, this.uiBus, 0.8);
+  }
+  /** Contador que sube (x1, x2, x3…): tic cada vez más agudo. */
+  countTick(i: number) {
+    this.tone(1200 + Math.min(14, i) * 70, 0.03, 'triangle', 0.05, 0, this.uiBus, undefined, 0.001);
+  }
+  /** Últimos segundos de la tirada: tic-tac (más agudo y fuerte al final). */
+  clockTick(urgent: boolean) {
+    this.tone(urgent ? 1760 : 1320, 0.05, 'square', urgent ? 0.05 : 0.03, 0, this.uiBus, undefined, 0.001);
+    this.noiseBurst(0.012, 'highpass', 5000, 0.8, urgent ? 0.08 : 0.05, 0, this.uiBus, undefined, 0.001);
+  }
+  /** Se acabó el tiempo: bocina corta. */
+  buzzer() {
+    this.tone(196, 0.45, 'sawtooth', 0.07, 0, this.uiBus, 160, 0.004);
+    this.tone(207, 0.45, 'square', 0.04, 0, this.uiBus, 170, 0.004);
+  }
   /** Subida antes de un momento importante. */
   riser(dur = 0.9) {
     this.noiseBurst(dur, 'bandpass', 400, 3, 0.12, 0, this.uiBus, 5000, dur * 0.95, true);

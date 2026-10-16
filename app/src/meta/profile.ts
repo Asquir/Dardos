@@ -82,6 +82,8 @@ export interface Settings {
   bullOff: boolean;
   /** repeticiones a cámara lenta de los grandes momentos */
   replays: boolean;
+  /** segundos para lanzar cada dardo (0 = sin límite) */
+  shotClock: number;
   language: 'es' | 'en';
   serverUrl: string;
   personalizedAds: boolean | null;
@@ -238,6 +240,7 @@ export function defaultProfile(): Profile {
       showCheckout: true,
       bullOff: true,
       replays: true,
+      shotClock: 15,
       language: 'es',
       serverUrl: (import.meta.env.VITE_SERVER_URL as string | undefined) ?? '',
       personalizedAds: null,

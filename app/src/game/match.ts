@@ -146,6 +146,8 @@ export interface MatchUI {
   award: { key: number; id: AwardId; player: number; also: AwardId[]; coins: number } | null;
   /** premios del jugador en esta partida */
   awardsWon: AwardId[];
+  /** reloj de la tirada del jugador (segundos que quedan; se actualiza sin redibujar toda la pantalla) */
+  clock: { total: number; left: number; key: number } | null;
   /** sorteo al bull: distancia (mm) de cada jugador, null si aún no ha tirado */
   bullOff: { dist: (number | null)[]; cur: number; winner: number | null } | null;
   /** repetición a cámara lenta en marcha */
@@ -212,6 +214,7 @@ export class Match {
       awardsWon: [],
       bullOff: null,
       replay: false,
+      clock: null,
     };
     matchStore.set(this.ui);
   }
@@ -292,6 +295,7 @@ export class Match {
       this.callRequire(idx);
     }
     if (idx === this.you && this.ui.state.turn.length === 0) this.pickBonus();
+    this.startShotClock();
     this.ui.phase = 'aim';
     this.emit();
     this.view.onHint = (h) => {
@@ -306,6 +310,7 @@ export class Match {
       leftHanded: p.settings.leftHanded,
       assist: this.setup.assist,
     });
+    this.stopShotClock();
     if (this.aborted) return;
     if (!shot) {
       // turno agotado (online): aplicamos el estado del servidor
@@ -589,6 +594,66 @@ export class Match {
     this.view.celebrate(top.tier >= 3 ? 1.1 : 0.8);
     if (!mine && this.setup.players[idx].kind === 'bot') this.botReact('cool', 0.5);
     return top.tier;
+  }
+
+  // ------------------------------------------------------------------ reloj de la tirada
+
+  private clockTimer = 0;
+  private clockHold = false;
+
+  /** Segundos para cada dardo (online manda el reloj del servidor; en el tutorial no hay prisa). */
+  private get shotClockSecs(): number {
+    if (this.setup.online || this.setup.type === 'tutorial') return 0;
+    return profile().settings.shotClock ?? 15;
+  }
+
+  /** Para el reloj mientras hay una ventana abierta (pausa, ajustes…). */
+  holdClock(on: boolean) {
+    this.clockHold = on;
+  }
+
+  private startShotClock() {
+    this.stopShotClock();
+    const secs = this.shotClockSecs;
+    if (!secs) return;
+    const c = { total: secs, left: secs, key: uid++ };
+    this.ui.clock = c;
+    let last = performance.now();
+    let warned = Math.ceil(secs);
+    let grace = 0;
+    this.clockTimer = window.setInterval(() => {
+      const now = performance.now();
+      const dt = Math.min(0.25, (now - last) / 1000);
+      last = now;
+      if (this.aborted || this.ui.clock !== c) return this.stopShotClock();
+      if (this.clockHold || engine.paused || document.hidden || this.ui.phase !== 'aim') return;
+      c.left = Math.max(0, c.left - dt);
+      const whole = Math.ceil(c.left);
+      if (whole < warned) {
+        warned = whole;
+        if (whole <= 5 && whole > 0) {
+          audio.clockTick(whole <= 3);
+          if (whole <= 3) haptics.light();
+        }
+      }
+      if (c.left > 0) return;
+      // con el dedo ya en el dardo le dejamos terminar el gesto (segundo y medio como mucho)
+      if (this.view.isDragging && grace < 1.5) {
+        grace += dt;
+        return;
+      }
+      this.stopShotClock();
+      audio.buzzer();
+      haptics.error();
+      this.say('red', '¡TIEMPO!', 'Dardo perdido');
+      this.view.timeoutAim();
+    }, 100);
+  }
+
+  private stopShotClock() {
+    if (this.clockTimer) clearInterval(this.clockTimer);
+    this.clockTimer = 0;
+    this.ui.clock = null;
   }
 
   // ------------------------------------------------------------------ repeticiones
@@ -1038,6 +1103,7 @@ export class Match {
 
   private cleanup() {
     this.aborted = true;
+    this.stopShotClock();
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
     this.view.setTurnCam(false);

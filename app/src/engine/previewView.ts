@@ -101,7 +101,11 @@ export class PreviewView implements View {
   private key: THREE.DirectionalLight;
   private backdrop: THREE.Mesh;
   private scanner: THREE.Mesh;
-  private burst: { rings: THREE.Mesh[]; t: number } | null = null;
+  /** anillos de energía de la mejora (se crean una vez y se reutilizan) */
+  private rings: THREE.Mesh[] = [];
+  private burstT = -1;
+  /** vuelta de lucimiento sobre su propio eje al mejorar (no mueve el encuadre) */
+  private spinT = -1;
   private rarity: Rarity = 'common';
   private W = 390;
   private H = 844;
@@ -213,20 +217,26 @@ export class PreviewView implements View {
   /** Destello y anillos de energía al mejorar una pieza. */
   celebrate() {
     if (!this.dart) return;
-    const rings: THREE.Mesh[] = [];
-    for (let i = 0; i < 3; i++) {
-      const m = new THREE.Mesh(
-        new THREE.TorusGeometry(0.01, 0.0009, 8, 64),
-        new THREE.MeshBasicMaterial({ color: RARITY_INFO[this.rarity].glow, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
-      );
-      m.position.z = this.partZ();
-      m.userData.delay = i * 0.12;
-      this.dart.group.add(m);
-      rings.push(m);
+    if (!this.rings.length) {
+      const geo = new THREE.TorusGeometry(0.01, 0.0006, 6, 64);
+      for (let i = 0; i < 3; i++) {
+        const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+        m.userData.delay = i * 0.12;
+        this.rings.push(m);
+      }
     }
-    this.burst = { rings, t: 0 };
-    this.yawVel += 0.5;
-    engine.doFlash(0.2);
+    for (const r of this.rings) {
+      (r.material as THREE.MeshBasicMaterial).color.set(RARITY_INFO[this.rarity].glow);
+      (r.material as THREE.MeshBasicMaterial).opacity = 0;
+      r.position.z = this.partZ();
+      r.scale.setScalar(1);
+      this.dart.group.add(r);
+    }
+    this.burstT = 0;
+    // antes se sumaba un giro brusco (en radianes por fotograma) que hacía bailar el dardo y la cámara:
+    // ahora da una vuelta suave sobre su propio eje, así la pieza enfocada no se sale del encuadre
+    this.spinT = 0;
+    engine.doFlash(0.15);
   }
 
   onPointer(kind: 'down' | 'move' | 'up', dx = 0) {
@@ -234,7 +244,8 @@ export class PreviewView implements View {
     if (kind === 'up') this.dragging = false;
     if (kind === 'move' && this.dragging) {
       this.yaw += dx * 0.01;
-      this.yawVel = dx * 0.01;
+      // velocidad en rad/s (los eventos llegan a ~60 por segundo) para la inercia al soltar
+      this.yawVel = THREE.MathUtils.clamp(dx * 0.6, -10, 10);
     }
   }
 
@@ -257,13 +268,27 @@ export class PreviewView implements View {
     // giro: el dardo rueda sobre su eje y se balancea; arrastrar lo gira
     if (!this.dragging) {
       this.yawVel *= Math.exp(-dt * 2.5);
-      this.yaw += this.yawVel;
-      this.yaw += (Math.sin(t * 0.35) * 0.32 - this.yaw) * dt * 0.6;
+      this.yaw += this.yawVel * dt;
+      // vuelve al balanceo por el camino más corto (sin deshacer las vueltas que haya dado)
+      this.yaw += wrapAngle(Math.sin(t * 0.35) * 0.32 - this.yaw) * Math.min(1, dt * 0.6);
     }
-    this.roll += dt * (this.focusPart === 'all' ? 0.55 : 0.35);
+    this.yaw = wrapAngle(this.yaw);
+    this.roll = (this.roll + dt * (this.focusPart === 'all' ? 0.55 : 0.35)) % (Math.PI * 2);
+    let spin = 0;
+    if (this.spinT >= 0) {
+      this.spinT += dt;
+      const k = Math.min(1, this.spinT / 1.1);
+      spin = (1 - Math.pow(1 - k, 3)) * Math.PI * 2;
+      this.pivot.scale.setScalar(1 + Math.sin(k * Math.PI) * 0.05);
+      if (k >= 1) {
+        this.spinT = -1;
+        spin = 0;
+        this.pivot.scale.setScalar(1);
+      }
+    }
     this.pivot.rotation.set(0, this.yaw, 0);
     this.roller.rotation.set(0, Math.PI / 2, 0.36);
-    if (this.dart) this.dart.group.rotation.z = this.roll;
+    if (this.dart) this.dart.group.rotation.z = this.roll + spin;
     this.pivot.position.y = Math.sin(t * 1.1) * 0.003;
 
     // encuadre: todo el dardo o la pieza elegida, centrado en la zona visible
@@ -325,25 +350,28 @@ export class PreviewView implements View {
     }
 
     // anillos de la mejora
-    if (this.burst) {
-      this.burst.t += dt;
+    if (this.burstT >= 0) {
+      this.burstT += dt;
       let alive = false;
-      for (const r of this.burst.rings) {
-        const kk = Math.max(0, this.burst.t - (r.userData.delay as number)) / 0.8;
+      for (const r of this.rings) {
+        const kk = Math.max(0, this.burstT - (r.userData.delay as number)) / 0.8;
         if (kk < 1) alive = true;
-        r.scale.setScalar(1 + kk * 7);
-        (r.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 1 - kk);
+        // crece el radio pero no el grosor a lo largo del dardo: visto de lado es una línea fina, no una barra
+        const sc = 1 + kk * 5;
+        r.scale.set(sc, sc, 1);
+        (r.material as THREE.MeshBasicMaterial).opacity = this.burstT < (r.userData.delay as number) ? 0 : Math.max(0, 1 - kk) * 0.75;
       }
       if (!alive) {
-        for (const r of this.burst.rings) {
-          r.removeFromParent();
-          r.geometry.dispose();
-          (r.material as THREE.Material).dispose();
-        }
-        this.burst = null;
+        for (const r of this.rings) r.removeFromParent();
+        this.burstT = -1;
       }
     }
   }
+}
+
+/** Ángulo en (-π, π]. */
+function wrapAngle(a: number) {
+  return a - Math.PI * 2 * Math.round(a / (Math.PI * 2));
 }
 
 let shared: PreviewView | null = null;

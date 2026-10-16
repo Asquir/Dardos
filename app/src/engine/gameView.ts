@@ -21,6 +21,7 @@ const DART_SCALE = 1.35;
 const HELD_SCALE = 0.78;
 const tmpV = new THREE.Vector3();
 const tmpV2 = new THREE.Vector3();
+const tmpV3 = new THREE.Vector3();
 const Z_AXIS = new THREE.Vector3(0, 0, 1);
 const INTRO_POS = new THREE.Vector3(1.4, 2.25, THROW_DISTANCE + 1.6);
 const INTRO_LOOK = new THREE.Vector3(0, BOARD_HEIGHT - 0.15, 0);
@@ -233,6 +234,8 @@ export class GameView implements View {
   private flightLog: FlightRec[] = [];
   private replay: { recs: FlightRec[]; i: number; t: number; hold: number; roll: number; ghost: DartModel | null; resolve: () => void; total?: number } | null = null;
   private replayW = 0;
+  /** dardos «fantasma» de las repeticiones, uno por aspecto, reutilizados (sin crear mallas al empezar) */
+  private ghosts = new Map<string, DartModel>();
   private replayPos = new THREE.Vector3();
   private replayLook = new THREE.Vector3();
   private falling: Falling[] = [];
@@ -289,6 +292,7 @@ export class GameView implements View {
   private aimResolve: ((r: AimResult | null) => void) | null = null;
   aim = { x: 0, y: 103 };
   private dragging = false;
+  private forceMiss = false;
   private focus = 0;
   private samples: { x: number; y: number; t: number }[] = [];
   private lastMove = { x: 0, y: 0, t: 0 };
@@ -607,7 +611,9 @@ export class GameView implements View {
   replayLast(count = 1): Promise<void> {
     const recs = this.flightLog.filter((r) => !r.bounce && r.model.group.parent).slice(-count);
     if (!recs.length || engine.quality === 'low') return Promise.resolve();
-    this.replay?.resolve();
+    if (this.replay) this.finishReplay();
+    // el fantasma se prepara ya (y queda en caché), no en el primer fotograma de la repetición
+    for (const r of recs) this.ghostFor(r.look);
     return new Promise((resolve) => {
       this.replay = { recs, i: 0, t: 0, hold: 0, roll: Math.random() * 6, ghost: null, resolve };
     });
@@ -621,12 +627,25 @@ export class GameView implements View {
     return !!this.replay;
   }
 
+  private ghostFor(look: DartLook): DartModel {
+    const key = look.barrel + '|' + look.shaft + '|' + look.flight;
+    let g = this.ghosts.get(key);
+    if (!g) {
+      g = buildDart(look, { shadows: false });
+      g.group.scale.setScalar(DART_SCALE);
+      g.group.visible = false;
+      this.ghosts.set(key, g);
+    }
+    return g;
+  }
+
   private finishReplay() {
     const R = this.replay!;
-    if (R.ghost) R.ghost.dispose();
+    if (R.ghost) R.ghost.group.removeFromParent();
     for (const r of R.recs) r.model.group.visible = true;
     this.replay = null;
     this.grade = { ...this.baseGrade };
+    this.shadowDirty = true;
     R.resolve();
   }
 
@@ -642,9 +661,11 @@ export class GameView implements View {
     const rec = R.recs[R.i];
     if (!R.ghost) {
       rec.model.group.visible = false;
-      R.ghost = buildDart(rec.look, { shadows: false });
-      R.ghost.group.scale.setScalar(DART_SCALE);
+      R.ghost = this.ghostFor(rec.look);
+      R.ghost.group.visible = false;
       this.scene.add(R.ghost.group);
+      // la sombra del dardo clavado desaparece: basta con redibujar las sombras ahora (no en cada fotograma)
+      this.shadowDirty = true;
       R.t = 0;
       R.hold = 0;
       this.grade = { ...this.baseGrade, saturation: (this.baseGrade.saturation ?? 1) * 0.85, vignette: (this.baseGrade.vignette ?? 0.45) + 0.12 };
@@ -655,10 +676,15 @@ export class GameView implements View {
       R.t = Math.min(1, R.t + (real * 0.36) / rec.dur);
       const k = R.t;
       const p = tmpV.set(0, 0, 0).addScaledVector(rec.p0, (1 - k) * (1 - k)).addScaledVector(rec.p1, 2 * (1 - k) * k).addScaledVector(p2, k * k);
-      const tan = tmpV2.set(0, 0, 0).addScaledVector(rec.p1.clone().sub(rec.p0), 2 * (1 - k)).addScaledVector(p2.clone().sub(rec.p1), 2 * k).normalize();
+      const tan = tmpV2
+        .set(0, 0, 0)
+        .addScaledVector(tmpV3.copy(rec.p1).sub(rec.p0), 2 * (1 - k))
+        .addScaledVector(tmpV3.copy(p2).sub(rec.p1), 2 * k)
+        .normalize()
+        .negate();
       R.ghost.group.visible = true;
       R.ghost.group.position.copy(p);
-      R.ghost.group.quaternion.setFromUnitVectors(Z_AXIS, tan.clone().negate());
+      R.ghost.group.quaternion.setFromUnitVectors(Z_AXIS, tan);
       R.roll += real * 3.5;
       R.ghost.group.rotateZ(R.roll);
       // cámara de diana (como en la tele): fija al lado del objetivo, se acerca mientras llega el dardo
@@ -669,6 +695,7 @@ export class GameView implements View {
         // impacto: aparece el dardo de verdad, chispas y sacudida
         R.ghost.group.visible = false;
         rec.model.group.visible = true;
+        this.shadowDirty = true;
         this.sparkBurst(p2, 24, '#ffffff', 0.9);
         this.puff(p2);
         this.shake = Math.max(this.shake, 0.4);
@@ -681,7 +708,7 @@ export class GameView implements View {
     this.replayPos.set(p2.x + 0.12, p2.y + 0.035, p2.z + 0.26);
     this.replayLook.copy(p2);
     if (R.hold > 0.9) {
-      R.ghost.dispose();
+      R.ghost.group.removeFromParent();
       R.ghost = null;
       if (R.i + 1 < R.recs.length) R.i++;
       else this.finishReplay();
@@ -977,7 +1004,8 @@ export class GameView implements View {
 
   /** Rehace el mapa de sombras solo si un dardo se mueve (o justo después de pararse). */
   private updateShadows() {
-    const moving = this.flying.length > 0 || this.falling.length > 0 || this.leaving.length > 0 || !!this.replay || this.stuck.some((s) => s.vib > 0);
+    // la repetición no cuenta: el fantasma no da sombra, así que solo se redibujan al empezar y al clavarse
+    const moving = this.flying.length > 0 || this.falling.length > 0 || this.leaving.length > 0 || this.stuck.some((s) => s.vib > 0);
     if (moving || this.wasMoving || this.shadowDirty) engine.renderer.shadowMap.needsUpdate = true;
     this.shadowDirty = false;
     this.wasMoving = moving;
@@ -1139,8 +1167,15 @@ export class GameView implements View {
     const ang = Math.atan2(vx, Math.max(0.01, vy));
     const dead = 0.14;
     const xErr = Math.abs(ang) > dead ? Math.sin(ang - Math.sign(ang) * dead) * 70 * (1 - ctrl * 0.5) : 0;
-    const x = this.aim.x + sway.x + gaussian(Math.random) * sigma + xErr;
-    const y = this.aim.y + sway.y + gaussian(Math.random) * sigma + yErr;
+    let x = this.aim.x + sway.x + gaussian(Math.random) * sigma + xErr;
+    let y = this.aim.y + sway.y + gaussian(Math.random) * sigma + yErr;
+    if (this.forceMiss) {
+      // fuera del doble, en el borde negro de la diana
+      const a = Math.random() * Math.PI * 2;
+      x = Math.cos(a) * 196;
+      y = Math.sin(a) * 196;
+      quality = 'weak';
+    }
     const res = this.aimResolve!;
     this.aimResolve = null;
     this.reticle.visible(false);
@@ -1153,6 +1188,20 @@ export class GameView implements View {
   /** Simula un lanzamiento del jugador sin gesto (botón de accesibilidad/tests). */
   autoRelease() {
     if (this.aimResolve) this.release(2.6, 0, false);
+  }
+
+  /** Se acabó el tiempo de la tirada: el dardo sale solo y se va fuera de la zona de puntos. */
+  timeoutAim() {
+    if (!this.aimResolve) return;
+    this.dragging = false;
+    this.forceMiss = true;
+    this.release(2.6, 0, true);
+    this.forceMiss = false;
+  }
+
+  /** El jugador tiene el dedo en la pantalla (preparando el lanzamiento). */
+  get isDragging() {
+    return this.dragging && !!this.aimResolve;
   }
 
   // ------------------------------------------------------------------ bucle

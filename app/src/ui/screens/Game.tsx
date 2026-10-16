@@ -9,7 +9,7 @@ import { MODES, modeLabel, modeRules, roundGoal, roundWord, C121_ATTEMPTS, C121_
 import { AWARDS } from '../../game/awards';
 import { AvatarImg, ChestImg, Progress } from '../components/common';
 import { ChatIco, PauseIco, Coin, Trophy, XpStar, AdIco, DartIco } from '../icons';
-import { go, openModal, toast } from '../state';
+import { go, openModal, toast, ui } from '../state';
 import { audio } from '../../services/audio';
 import { EMOTES } from '../../meta/catalog';
 import { profile, profileStore, mutate } from '../../meta/profile';
@@ -35,7 +35,12 @@ import { dartPower } from './Collection';
 
 export function Game() {
   const m = useStore(matchStore);
+  const u = useStore(ui);
   const inputRef = useRef<HTMLDivElement>(null);
+  // el reloj de la tirada se para mientras haya una ventana abierta (pausa, ajustes, emotes…)
+  useEffect(() => {
+    currentMatch()?.holdClock(u.modals.length > 0);
+  }, [u.modals.length, !!m]);
   useEffect(() => {
     const v = gameView();
     if (inputRef.current) v.attachInput(inputRef.current);
@@ -51,6 +56,35 @@ export function Game() {
       {m.phase === 'intro' && m.setup.players.length === 1 && <SoloIntro m={m} />}
       {m.setup.type === 'tutorial' && m.phase !== 'ended' && <TutorialCoach m={m} />}
       {m.phase === 'ended' && m.result && <Results m={m} />}
+    </div>
+  );
+}
+
+/** Reloj de la tirada: se lee el valor vivo del reloj (sin redibujar toda la pantalla cada décima). */
+function ShotClock({ clock }: { clock: { total: number; left: number } }) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => tick((n) => n + 1), 100);
+    return () => clearInterval(id);
+  }, []);
+  return <ClockRing left={clock.left} total={clock.total} />;
+}
+
+/** Anillo que se vacía: verde, luego amarillo y rojo latiendo en los últimos 5 segundos. */
+function ClockRing({ left, total }: { left: number; total: number }) {
+  const k = Math.max(0, Math.min(1, left / total));
+  const secs = Math.ceil(left);
+  const low = secs <= 5;
+  const color = low ? '#ff3b55' : k < 0.5 ? '#ffc93a' : '#5df08e';
+  const R = 19;
+  const C = 2 * Math.PI * R;
+  return (
+    <div class={'shot-clock' + (low ? ' low' : '')} key={low ? secs : 'n'} title="Tiempo para lanzar">
+      <svg viewBox="0 0 48 48">
+        <circle cx="24" cy="24" r={R} class="bg" />
+        <circle cx="24" cy="24" r={R} class="fg" style={{ stroke: color, strokeDasharray: C, strokeDashoffset: C * (1 - k) }} />
+      </svg>
+      <b style={{ color: low ? color : '#fff' }}>{secs}</b>
     </div>
   );
 }
@@ -248,7 +282,8 @@ function Hud({ m }: { m: MatchUI }) {
 
       {s.config.mode === 'cricket' && <CricketBoard m={m} />}
       {showCo && <div class="checkout-pill">🎯 {m.checkout}</div>}
-      {m.deadline > 0 && cur === you && <div class={'timer-ring' + (timeLeft <= 5 ? ' low' : '')}>⏱ {timeLeft}s</div>}
+      {m.deadline > 0 && cur === you && <ClockRing left={timeLeft} total={28} />}
+      {m.clock && m.phase === 'aim' && <ShotClock key={m.clock.key} clock={m.clock} />}
       {!m.opponentConnected && <div class="checkout-pill" style={{ top: 'calc(var(--safe-top) + 150px)', background: 'rgba(200,30,60,.9)' }}>Rival desconectado...</div>}
       {m.reconnecting && <div class="checkout-pill" style={{ top: 'calc(var(--safe-top) + 186px)', background: 'rgba(200,120,20,.92)' }}>📶 Reconectando… no cierres la app</div>}
 

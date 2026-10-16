@@ -144,6 +144,25 @@ export function equip(id: string) {
   });
 }
 
+/** Guarda el dardo actual en un hueco de sets. */
+export function saveLoadout(i: number) {
+  mutate((p) => {
+    p.loadouts = p.loadouts.map((l, k) => (k === i ? { ...p.equipped } : l));
+  });
+}
+
+/** Equipa un set guardado (solo las piezas que sigan en la colección). */
+export function useLoadout(i: number): boolean {
+  const l = profile().loadouts[i];
+  if (!l) return false;
+  mutate((p) => {
+    const next = { ...p.equipped };
+    for (const slot of ['barrel', 'shaft', 'flight'] as const) if (p.items[l[slot]]) next[slot] = l[slot];
+    p.equipped = next;
+  });
+  return true;
+}
+
 // ---------------------------------------------------------------- Cofres
 
 export function slotState(s: ChestSlot | null, now = Date.now()): 'empty' | 'locked' | 'unlocking' | 'ready' {
@@ -520,7 +539,8 @@ export const SHOP_CHESTS: ChestType[] = ['silver', 'gold', 'epic', 'legendary'];
 export function shouldShowInterstitial(p: Profile = profile()): boolean {
   if (p.purchases.removeAds || isVip(p)) return false;
   if (p.stats.matches < 3) return false; // nunca en las primeras partidas
-  return p.ads.counter >= 2 && Date.now() - p.ads.lastInterstitial > 120_000;
+  // como mucho uno cada 3 partidas con copas y 4 minutos (anuncios tras cada partida es la queja nº 1)
+  return p.ads.counter >= 3 && Date.now() - p.ads.lastInterstitial > 240_000;
 }
 
 export function noteMatchForAds() {

@@ -29,12 +29,10 @@ import { Back, Gem, AdIco } from '../icons';
 import { ItemThumb, RewardIcon } from '../components/common';
 import { CHESTS, type Reward } from '../../meta/chests';
 import type { MatchResult } from '../../game/match';
+import { modeLabel } from '../../meta/modes';
 
 export function modeText(def: LiveEventDef): string {
-  const c = def.config;
-  if (c.mode === 'cricket') return 'Cricket';
-  if (c.mode === 'x01') return `${c.start}${c.doubleOut ? ' · doble para cerrar' : ' · cierre libre'}`;
-  return c.mode;
+  return modeLabel(def.config);
 }
 
 export function scoringChips(def: LiveEventDef): [string, string][] {

@@ -12,6 +12,8 @@ import { AvatarImg, Modal } from '../components/common';
 import { audio } from '../../services/audio';
 import { shareText } from '../../services/platform';
 import { ShareIco } from '../icons';
+import { MODES } from '../../meta/modes';
+import type { MatchConfig } from '@shared/rules';
 
 export function Matchmaking() {
   const s = useStore(ui);
@@ -40,7 +42,7 @@ export function Matchmaking() {
       if (m.code === 'room_not_found') go('events');
     });
     net.syncProfile();
-    if (room === 'create') net.send({ t: 'room_create', config: { mode: 'x01', start: 501, doubleOut: true } });
+    if (room === 'create') net.send({ t: 'room_create', config: roomConfig(s.params.mode as string | undefined) });
     else if (room) net.send({ t: 'room_join', code: room });
     else net.send({ t: 'queue', arena: arenaId, config: arena.config });
     return () => {
@@ -118,8 +120,18 @@ export function Matchmaking() {
   );
 }
 
+const ROOM_MODES = ['501', '301', 'cricket', 'killer', 'shanghai', 'halveit', 'baseball'] as const;
+type RoomMode = (typeof ROOM_MODES)[number];
+
+function roomConfig(m: string | undefined): MatchConfig {
+  if (m === '301') return { mode: 'x01', start: 301, doubleOut: true };
+  if (m && m !== '501' && (ROOM_MODES as readonly string[]).includes(m)) return { mode: m as MatchConfig['mode'] };
+  return { mode: 'x01', start: 501, doubleOut: true };
+}
+
 export function PrivateRoomModal() {
   const [code, setCode] = useState('');
+  const [mode, setMode] = useState<RoomMode>('501');
   if (!net.online) {
     return (
       <Modal title="Sala privada">
@@ -134,8 +146,15 @@ export function PrivateRoomModal() {
   return (
     <Modal title="Sala privada">
       <div class="col">
-        <button class="btn block gold" onClick={() => (closeModal(), go('matchmaking', { room: 'create' }))}>
-          Crear sala (501)
+        <div class="seg wrap">
+          {ROOM_MODES.map((m) => (
+            <button key={m} class={mode === m ? 'on' : ''} onClick={() => setMode(m)}>
+              {m === '501' || m === '301' ? m : MODES[m].icon + ' ' + MODES[m].name}
+            </button>
+          ))}
+        </div>
+        <button class="btn block gold" onClick={() => (closeModal(), go('matchmaking', { room: 'create', mode }))}>
+          Crear sala ({mode === '501' || mode === '301' ? mode : MODES[mode].name})
         </button>
         <div class="muted" style={{ textAlign: 'center', fontWeight: 800 }}>— o únete con un código —</div>
         <input class="form-field" maxLength={6} placeholder="CÓDIGO" value={code} onInput={(e) => setCode((e.target as HTMLInputElement).value.toUpperCase())} style={{ textAlign: 'center', letterSpacing: '0.2em', fontSize: '22px' }} />

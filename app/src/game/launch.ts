@@ -10,6 +10,7 @@ import { BARRELS, FLIGHTS, SHAFTS, HAIRS, BEARDS, GLASSES, HATS, SHIRTS, SKIN_TO
 import { profile, mutate } from '../meta/profile';
 import { startMatch, type MatchPlayer, type MatchSetup, type Match } from './match';
 import { todaysChallenge } from '../meta/progression';
+import { modeLabel } from '../meta/modes';
 
 export function randomAvatar(seed: number): AvatarConfig {
   const r = rng(seed);
@@ -73,7 +74,7 @@ export function botPlayer(arenaId: number, opts: { sigma?: number; trophies?: nu
 }
 
 export function remotePlayer(pp: PublicProfile): MatchPlayer {
-  return { kind: 'remote', name: pp.name, level: pp.level, trophies: pp.trophies, avatar: pp.avatar, dart: pp.dart, club: pp.club?.tag };
+  return { kind: 'remote', name: pp.name, level: pp.level, trophies: pp.trophies, avatar: pp.avatar, dart: pp.dart, club: pp.club?.tag, id: pp.id, ai: !!pp.isBot };
 }
 
 /** Partida clasificatoria contra la máquina (paga la entrada). */
@@ -95,7 +96,9 @@ export function rankedSetup(arenaId: number): MatchSetup | null {
   };
 }
 
-export function trainingSetup(kind: 'atc' | 'cricket' | 'x01' | 'free' | 'checkout', vsBot: boolean): MatchSetup {
+export type TrainingKind = 'atc' | 'cricket' | 'cutthroat' | 'x01' | 'free' | 'checkout' | 'killer' | 'shanghai' | 'halveit' | 'bobs27' | 'baseball' | 'c121';
+
+export function trainingSetup(kind: TrainingKind, vsBot: boolean): MatchSetup {
   const p = profile();
   const arena = Math.min(p.selectedArena, 6);
   let config: MatchConfig;
@@ -107,6 +110,9 @@ export function trainingSetup(kind: 'atc' | 'cricket' | 'x01' | 'free' | 'checko
     case 'cricket':
       config = { mode: 'cricket', maxTurns: 20 };
       break;
+    case 'cutthroat':
+      config = { mode: 'cricket', maxTurns: 20, cutthroat: true };
+      break;
     case 'free':
       config = { mode: 'free', maxTurns: 10 };
       break;
@@ -116,16 +122,28 @@ export function trainingSetup(kind: 'atc' | 'cricket' | 'x01' | 'free' | 'checko
       dartLimit = 9;
       break;
     }
+    case 'killer':
+    case 'shanghai':
+    case 'halveit':
+    case 'bobs27':
+    case 'baseball':
+    case 'c121':
+      config = { mode: kind, seed: Math.floor(Math.random() * 1e9) };
+      break;
     default:
       config = { mode: 'x01', start: 501, doubleOut: true };
   }
   const players = [humanPlayer()];
-  if (vsBot && kind !== 'checkout') players.push(botPlayer(arena));
-  return { type: 'training', config, arena, players, starter: 0, dartLimit, title: 'Entrenamiento' };
+  if (vsBot && kind !== 'checkout' && kind !== 'bobs27' && kind !== 'c121') players.push(botPlayer(arena));
+  // Killer y Cut-Throat son más divertidos a tres bandas
+  if (vsBot && (kind === 'killer' || kind === 'cutthroat')) players.push(botPlayer(arena, { seed: Math.floor(Math.random() * 1e9) }));
+  const title = kind === 'x01' || kind === 'checkout' || kind === 'free' ? 'Entrenamiento' : modeLabel(config);
+  return { type: 'training', config, arena, players, starter: 0, dartLimit, title };
 }
 
 export function localSetup(names: string[], config: MatchConfig): MatchSetup {
   const p = profile();
+  config = { ...config, seed: config.seed ?? Math.floor(Math.random() * 1e9) };
   const players = names.map((n, i) => ({ ...humanPlayer(), name: n, dart: i === 0 ? p.equipped : { barrel: 'b_nickel', shaft: 's_alu_blue', flight: 'f_blue' } }));
   return { type: 'local', config, arena: p.selectedArena, players, starter: 0, title: 'Partida local' };
 }
@@ -160,6 +178,19 @@ export function eventSetup(): MatchSetup | null {
     players: [humanPlayer(), botPlayer(level)],
     starter: Math.random() < 0.5 ? 0 : 1,
     title: ev.def.name,
+  };
+}
+
+/** Reto entre amigos (Duelo de 9 dardos): nuevo o aceptando el código de otro. */
+export function duelSetup(seed: number, rival?: { name: string; score: number }): MatchSetup {
+  return {
+    type: 'duel',
+    config: { mode: 'duel9', seed },
+    arena: Math.min(profile().selectedArena, 6),
+    players: [humanPlayer()],
+    starter: 0,
+    duel: { seed, rival },
+    title: rival ? `Reto de ${rival.name}` : 'Duelo de 9 dardos',
   };
 }
 

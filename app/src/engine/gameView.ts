@@ -25,6 +25,16 @@ const Z_AXIS = new THREE.Vector3(0, 0, 1);
 const INTRO_POS = new THREE.Vector3(1.4, 2.25, THROW_DISTANCE + 1.6);
 const INTRO_LOOK = new THREE.Vector3(0, BOARD_HEIGHT - 0.15, 0);
 
+interface FlightRec {
+  look: DartLook;
+  p0: THREE.Vector3;
+  p1: THREE.Vector3;
+  p2: THREE.Vector3;
+  dur: number;
+  bounce: boolean;
+  model: DartModel;
+}
+
 interface Glow {
   group: THREE.Group;
   fill: THREE.MeshBasicMaterial;
@@ -71,6 +81,11 @@ interface Flying {
   resolve: () => void;
   trail: Trail | null;
   cine: boolean;
+  /** punto de la diana en mm (para detectar un Robin Hood con el siguiente dardo) */
+  xmm: number;
+  ymm: number;
+  /** se clava en la cola de otro dardo: su orientación */
+  robin: THREE.Quaternion | null;
 }
 interface Trail {
   mesh: THREE.Mesh;
@@ -96,6 +111,8 @@ interface Stuck {
   base: THREE.Quaternion;
   vib: number;
   axis: THREE.Vector3;
+  xmm?: number;
+  ymm?: number;
 }
 interface Falling {
   model: DartModel;
@@ -135,6 +152,10 @@ function sector(r0: number, r1: number, num: number, pad = 0): THREE.BufferGeome
 
 /** Geometría de la zona de la diana de un objetivo ("T20", "D16", "S5", "SB", "DB"); `wedge` = el número entero; `pad` = margen en mm. */
 export function targetGeometry(t: Target, wedge = false, pad = 0): THREE.BufferGeometry {
+  // anillos completos de Halve-It: cualquier doble, cualquier triple o el bull entero
+  if (t === 'DANY') return new THREE.RingGeometry((BOARD.doubleIn - pad) * MM, (BOARD.doubleOut + pad) * MM, 120);
+  if (t === 'TANY') return new THREE.RingGeometry((BOARD.trebleIn - pad) * MM, (BOARD.trebleOut + pad) * MM, 120);
+  if (t === 'BULL') return new THREE.CircleGeometry((BOARD.outerBull + pad) * MM, 48);
   if (t === 'DB') return new THREE.CircleGeometry((BOARD.bull + pad) * MM, 40);
   if (t === 'SB') return new THREE.RingGeometry(Math.max(0.1, BOARD.bull - pad) * MM, (BOARD.outerBull + pad) * MM, 48);
   const num = parseInt(t.slice(1), 10);
@@ -145,6 +166,9 @@ export function targetGeometry(t: Target, wedge = false, pad = 0): THREE.BufferG
 }
 
 export function targetLabel(t: Target): string {
+  if (t === 'DANY') return 'DOBLES';
+  if (t === 'TANY') return 'TRIPLES';
+  if (t === 'BULL') return 'BULL';
   return t === 'DB' ? 'BULL' : t === 'SB' ? '25' : t[0] === 'S' ? t.slice(1) : t;
 }
 
@@ -204,6 +228,12 @@ export class GameView implements View {
 
   private stuck: Stuck[] = [];
   private flying: Flying[] = [];
+  /** trayectorias de los últimos dardos (para las repeticiones) */
+  private flightLog: FlightRec[] = [];
+  private replay: { recs: FlightRec[]; i: number; t: number; hold: number; roll: number; ghost: DartModel | null; resolve: () => void } | null = null;
+  private replayW = 0;
+  private replayPos = new THREE.Vector3();
+  private replayLook = new THREE.Vector3();
   private falling: Falling[] = [];
   private leaving: Leaving[] = [];
   private decor: DartModel[] = [];
@@ -363,10 +393,11 @@ export class GameView implements View {
     group.position.z = 0.0013;
     this.board.group.add(group);
     // chapa con el nombre del objetivo, fuera de la diana
-    const num = t === 'DB' || t === 'SB' ? 20 : parseInt(t.slice(1), 10);
+    const central = t === 'DB' || t === 'SB' || t === 'BULL' || t === 'DANY' || t === 'TANY';
+    const num = central ? 20 : parseInt(t.slice(1), 10);
     const i = SEGMENTS.indexOf(num as (typeof SEGMENTS)[number]);
     const ang = (90 - i * 18) * DEG;
-    const r = t === 'DB' || t === 'SB' ? 0 : 252;
+    const r = central ? 0 : 252;
     const pin = new THREE.Sprite(new THREE.SpriteMaterial({ map: label ? pillTexture(label, sub, color) : null, transparent: true, depthWrite: false, toneMapped: false }));
     pin.userData.hidden = !label;
     const pp = r ? this.boardPoint(Math.cos(ang) * r, Math.sin(ang) * r, 0.01) : this.boardPoint(0, 252, 0.01);
@@ -519,7 +550,12 @@ export class GameView implements View {
    * Lanza un dardo hacia (x, y) mm. Si `fromHand`, sale del dardo sostenido por el jugador.
    * Devuelve una promesa que se resuelve al impactar.
    */
-  throwDart(opts: { x: number; y: number; look: DartLook; bounce?: boolean; fromHand?: boolean; speed?: number; cine?: boolean }): Promise<void> {
+  /** ¿Hay un dardo clavado a menos de 1,8 mm? Devuelve su índice (para un posible Robin Hood). */
+  robinHoodSpot(xmm: number, ymm: number): number {
+    return this.stuck.findIndex((s) => s.xmm !== undefined && Math.hypot(s.xmm - xmm, s.ymm! - ymm) < 1.8);
+  }
+
+  throwDart(opts: { x: number; y: number; look: DartLook; bounce?: boolean; fromHand?: boolean; speed?: number; cine?: boolean; robin?: number }): Promise<void> {
     return new Promise((resolve) => {
       let model: DartModel;
       let p0: THREE.Vector3;
@@ -538,7 +574,15 @@ export class GameView implements View {
       const wall = r > 330;
       const outside = r > BOARD.radius;
       const z = outside && !wall ? -0.04 : -0.006;
-      const p2 = this.boardPoint(opts.x, opts.y, wall ? -0.06 : z);
+      let p2 = this.boardPoint(opts.x, opts.y, wall ? -0.06 : z);
+      // Robin Hood: la punta se clava en la cola del dardo que ya estaba ahí
+      const host = opts.robin !== undefined && opts.robin >= 0 ? this.stuck[opts.robin] : null;
+      let robin: THREE.Quaternion | null = null;
+      if (host) {
+        const back = new THREE.Vector3(0, 0, 1).applyQuaternion(host.base);
+        p2 = host.model.group.position.clone().addScaledVector(back, host.model.length * DART_SCALE * 0.9);
+        robin = host.base.clone();
+      }
       const p1 = p0.clone().lerp(p2, 0.5);
       p1.y += 0.12 + p0.distanceTo(p2) * 0.03;
       const dur = (0.3 + p0.distanceTo(p2) * 0.05) / (opts.speed ?? 1);
@@ -548,12 +592,99 @@ export class GameView implements View {
         this.cine = { model, target: p2.clone(), w: 0, hold: 0, active: true };
         engine.timeScale = 0.3;
       }
-      this.flying.push({ model, p0, p1, p2, t: 0, dur, roll: Math.random() * 6, bounce: !!opts.bounce || wall, wall, resolve, trail, cine });
+      this.flying.push({ model, p0, p1, p2, t: 0, dur, roll: Math.random() * 6, bounce: !host && (!!opts.bounce || wall), wall, resolve, trail, cine, xmm: opts.x, ymm: opts.y, robin });
+      this.flightLog.push({ look: opts.look, p0: p0.clone(), p1: p1.clone(), p2: p2.clone(), dur, bounce: !!opts.bounce || wall, model });
+      if (this.flightLog.length > 6) this.flightLog.shift();
     });
+  }
+
+  // ------------------------------------------------------------------ repeticiones
+
+  /** Repite a cámara lenta los últimos dardos (que se clavaron) con una cámara que los persigue. */
+  replayLast(count = 1): Promise<void> {
+    const recs = this.flightLog.filter((r) => !r.bounce && r.model.group.parent).slice(-count);
+    if (!recs.length || engine.quality === 'low') return Promise.resolve();
+    this.replay?.resolve();
+    return new Promise((resolve) => {
+      this.replay = { recs, i: 0, t: 0, hold: 0, roll: Math.random() * 6, ghost: null, resolve };
+    });
+  }
+
+  skipReplay() {
+    if (this.replay) this.finishReplay();
+  }
+
+  get replaying(): boolean {
+    return !!this.replay;
+  }
+
+  private finishReplay() {
+    const R = this.replay!;
+    if (R.ghost) R.ghost.dispose();
+    for (const r of R.recs) r.model.group.visible = true;
+    this.replay = null;
+    this.grade = { ...this.baseGrade };
+    R.resolve();
+  }
+
+  private updateReplay(dt: number) {
+    const target = this.replay ? 1 : 0;
+    this.replayW += (target - this.replayW) * Math.min(1, dt * 5);
+    const R = this.replay;
+    if (!R) return;
+    const real = dt / Math.max(0.05, engine.timeScale);
+    const rec = R.recs[R.i];
+    if (!R.ghost) {
+      rec.model.group.visible = false;
+      R.ghost = buildDart(rec.look, { shadows: false });
+      R.ghost.group.scale.setScalar(DART_SCALE);
+      this.scene.add(R.ghost.group);
+      R.t = 0;
+      R.hold = 0;
+      this.grade = { ...this.baseGrade, saturation: (this.baseGrade.saturation ?? 1) * 0.8, vignette: (this.baseGrade.vignette ?? 0.45) + 0.18, aberration: 0.35 };
+    }
+    // a un tercio de la velocidad real
+    R.t = Math.min(1, R.t + (real * 0.36) / rec.dur);
+    const k = R.t;
+    const p = tmpV.set(0, 0, 0).addScaledVector(rec.p0, (1 - k) * (1 - k)).addScaledVector(rec.p1, 2 * (1 - k) * k).addScaledVector(rec.p2, k * k);
+    const tan = tmpV2.set(0, 0, 0).addScaledVector(rec.p1.clone().sub(rec.p0), 2 * (1 - k)).addScaledVector(rec.p2.clone().sub(rec.p1), 2 * k).normalize();
+    if (k < 1) {
+      R.ghost.group.position.copy(p);
+      R.ghost.group.quaternion.setFromUnitVectors(Z_AXIS, tan.clone().negate());
+      R.roll += real * 3.5;
+      R.ghost.group.rotateZ(R.roll);
+      // cámara de lado que persigue el dardo y se adelanta un poco hacia la diana
+      this.replayPos.set(p.x + 0.16, p.y + 0.05, p.z + 0.12);
+      this.replayLook.copy(p).lerp(rec.p2, 0.35);
+    } else {
+      if (R.hold === 0) {
+        // impacto: aparece el dardo de verdad, chispas y sacudida
+        R.ghost.dispose();
+        R.ghost = null;
+        rec.model.group.visible = true;
+        this.sparkBurst(rec.p2, 24, '#ffffff', 0.9);
+        this.puff(rec.p2);
+        this.shake = Math.max(this.shake, 0.45);
+        R.hold = 0.0001;
+        // se queda un instante mirando el dardo clavado
+        this.replayPos.set(rec.p2.x + 0.07, rec.p2.y + 0.03, rec.p2.z + 0.22);
+        this.replayLook.copy(rec.p2);
+        return;
+      }
+      R.hold += real;
+      if (R.hold > 0.8) {
+        if (R.i + 1 < R.recs.length) {
+          R.i++;
+          R.ghost = null;
+        } else this.finishReplay();
+      }
+    }
   }
 
   /** Recoge los dardos clavados (al final del turno). */
   clearDarts(): Promise<void> {
+    if (this.replay) this.finishReplay();
+    this.flightLog = [];
     return new Promise((resolve) => {
       const list = this.stuck.splice(0);
       if (!list.length) return resolve();
@@ -583,6 +714,9 @@ export class GameView implements View {
     this.trails = [];
     this.cine = null;
     engine.timeScale = 1;
+    if (this.replay) this.finishReplay();
+    this.flightLog = [];
+    this.replayW = 0;
     this.setTarget(null);
     this.setBonus(null);
     this.ghostAnim?.resolve();
@@ -832,7 +966,7 @@ export class GameView implements View {
 
   /** Rehace el mapa de sombras solo si un dardo se mueve (o justo después de pararse). */
   private updateShadows() {
-    const moving = this.flying.length > 0 || this.falling.length > 0 || this.leaving.length > 0 || this.stuck.some((s) => s.vib > 0);
+    const moving = this.flying.length > 0 || this.falling.length > 0 || this.leaving.length > 0 || !!this.replay || this.stuck.some((s) => s.vib > 0);
     if (moving || this.wasMoving || this.shadowDirty) engine.renderer.shadowMap.needsUpdate = true;
     this.shadowDirty = false;
     this.wasMoving = moving;
@@ -1014,6 +1148,7 @@ export class GameView implements View {
 
   update(t: number, dt: number) {
     this.updateShadows();
+    this.updateReplay(dt);
     this.env?.update(t, dt);
 
     // cámara
@@ -1079,6 +1214,10 @@ export class GameView implements View {
         pos.lerp(tmpV.clone().set(this.celebrateFocus.x, this.celebrateFocus.y - 0.02, 0.9), k * 0.6);
         look.lerp(this.celebrateFocus, k * 0.8);
       }
+    }
+    if (this.replayW > 0.002) {
+      pos.lerp(this.replayPos, this.replayW);
+      look.lerp(this.replayLook, this.replayW);
     }
     if (this.shake > 0) {
       this.shake = Math.max(0, this.shake - dt * 2.5);
@@ -1173,22 +1312,32 @@ export class GameView implements View {
           this.falling.push({ model: f.model, vel, spin: new THREE.Vector3(Math.random() * 8, Math.random() * 8, 0), t: 0 });
           this.shake = Math.max(this.shake, 0.2);
         } else {
-          // ligera variación de ángulo al clavarse
-          const dir = tan.clone().negate();
-          // la cola algo levantada y ladeada para que el dardo se vea bien desde la línea de tiro
-          dir.x += (Math.random() - 0.5) * 0.22 + (opts_side(f.p2.x) * 0.06);
-          dir.y += 0.26 + (Math.random() - 0.5) * 0.08;
-          dir.normalize();
-          f.model.group.quaternion.setFromUnitVectors(Z_AXIS, dir);
-          f.model.group.rotateZ(f.roll);
+          if (f.robin) {
+            // alineado con el dardo en el que se ha clavado
+            f.model.group.quaternion.copy(f.robin);
+            this.sparkBurst(f.p2, 34, '#5df08e', 1.1);
+            this.sparkBurst(f.p2, 14, '#ffffff', 0.7);
+            this.shake = Math.max(this.shake, 0.6);
+          } else {
+            // ligera variación de ángulo al clavarse
+            const dir = tan.clone().negate();
+            // la cola algo levantada y ladeada para que el dardo se vea bien desde la línea de tiro
+            dir.x += (Math.random() - 0.5) * 0.22 + opts_side(f.p2.x) * 0.06;
+            dir.y += 0.26 + (Math.random() - 0.5) * 0.08;
+            dir.normalize();
+            f.model.group.quaternion.setFromUnitVectors(Z_AXIS, dir);
+            f.model.group.rotateZ(f.roll);
+            this.puff(f.p2);
+            this.shake = Math.max(this.shake, 0.25);
+          }
           this.stuck.push({
             model: f.model,
             base: f.model.group.quaternion.clone(),
-            vib: 1,
+            vib: f.robin ? 0.6 : 1,
             axis: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, 0).normalize(),
+            xmm: f.robin ? undefined : f.xmm,
+            ymm: f.robin ? undefined : f.ymm,
           });
-          this.puff(f.p2);
-          this.shake = Math.max(this.shake, 0.25);
         }
         f.resolve();
       }

@@ -34,7 +34,8 @@ import {
 import { claim, openChestReward } from '../rewards';
 import { confetti } from '../fx';
 import { ARENAS } from '../../meta/arenas';
-import { ItemModal } from '../screens/Collection';
+import { ItemModal, LoadoutsModal } from '../screens/Collection';
+import { DuelModal } from '../screens/Duel';
 import { currentMatch } from '../../game/match';
 import { quitMatch } from '../screens/Game';
 import { PrivateRoomModal } from '../screens/Matchmaking';
@@ -86,6 +87,10 @@ function ModalView({ m }: { m: ModalSpec }) {
       return <OddsModal chest={m.chest} />;
     case 'item':
       return <ItemModal id={m.id} />;
+    case 'loadouts':
+      return <LoadoutsModal />;
+    case 'duel':
+      return <DuelModal />;
     case 'confirm':
       return (
         <Modal title={m.title}>
@@ -675,6 +680,8 @@ function SettingsModal() {
         />,
       )}
       {row('Zona objetivo y cierres', <Toggle on={s.showCheckout} onChange={(v) => set('showCheckout', v)} />)}
+      {row('Sorteo al bull para empezar', <Toggle on={s.bullOff !== false} onChange={(v) => set('bullOff', v)} />)}
+      {row('Repeticiones de los grandes momentos', <Toggle on={s.replays !== false} onChange={(v) => set('replays', v)} />)}
       {row('Zurdo', <Toggle on={s.leftHanded} onChange={(v) => set('leftHanded', v)} />)}
       <div style={{ padding: '9px 0', borderBottom: '1px solid var(--stroke)' }}>
         <div style={{ fontWeight: 800, marginBottom: '6px' }}>Lanzamiento</div>

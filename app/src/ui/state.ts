@@ -17,6 +17,7 @@ export type ScreenName =
   | 'game'
   | 'matchmaking'
   | 'tournament'
+  | 'career'
   | 'onboarding'
   | 'liveEvent';
 
@@ -30,6 +31,8 @@ export type ModalSpec =
   | { kind: 'chestSlot'; idx: number }
   | { kind: 'odds'; chest: ChestType }
   | { kind: 'item'; id: string }
+  | { kind: 'loadouts' }
+  | { kind: 'duel' }
   | { kind: 'confirm'; title: string; text: ComponentChildren; ok: string; onOk: () => void; danger?: boolean }
   | { kind: 'info'; title: string; text: ComponentChildren }
   | { kind: 'arenaUnlocked'; arena: number }

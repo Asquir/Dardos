@@ -272,10 +272,13 @@ setInterval(() => {
   for (const [k, r] of rooms) if (Date.now() - r.at > 30 * 60_000 || r.host.ws.readyState !== WebSocket.OPEN) rooms.delete(k);
 }, 60_000);
 
+const ONLINE_MODES: MatchConfig['mode'][] = ['x01', 'cricket', 'atc', 'killer', 'shanghai', 'halveit', 'baseball'];
+
 function safeConfig(c: Partial<MatchConfig> | undefined): MatchConfig {
-  const mode = c?.mode === 'cricket' || c?.mode === 'atc' ? c.mode : 'x01';
+  const mode = c?.mode && ONLINE_MODES.includes(c.mode) ? c.mode : 'x01';
   const start = c?.start && [101, 301, 501, 701].includes(c.start) ? c.start : 501;
-  return { mode, start, doubleOut: c?.doubleOut !== false, legsToWin: num(c?.legsToWin, 1, 3, 1) };
+  // la semilla (números de Killer) la pone el servidor, no el cliente
+  return { mode, start, doubleOut: c?.doubleOut !== false, legsToWin: num(c?.legsToWin, 1, 3, 1), seed: Math.floor(Math.random() * 1e9) };
 }
 
 // ------------------------------------------------------------------ clubes

@@ -1,6 +1,7 @@
 // Perfil del jugador: todo el progreso guardado en el dispositivo (y sincronizado con el servidor).
 
 import type { AvatarConfig, DartLook } from '@shared/protocol';
+import type { CareerState } from './career';
 import { Store } from '../core/store';
 import { loadJSON, saveJSON } from '../services/storage';
 import type { ChestType } from './chests';
@@ -40,6 +41,19 @@ export interface MatchSummary {
   won: boolean;
   avg: number;
   online: boolean;
+  /** modo de juego (x01, cricket…) */
+  game?: string;
+  /** media de los 9 primeros dardos (X01) */
+  f9?: number;
+}
+
+/** Impacto en mm empaquetado en un número (para el mapa de calor). */
+export function packHit(x: number, y: number): number {
+  return Math.round(Math.max(-500, Math.min(500, x)) + 500) * 1024 + Math.round(Math.max(-500, Math.min(500, y)) + 500);
+}
+
+export function unpackHit(v: number): { x: number; y: number } {
+  return { x: Math.floor(v / 1024) - 500, y: (v % 1024) - 500 };
 }
 
 export interface TournamentState {
@@ -64,6 +78,10 @@ export interface Settings {
   sensitivity: number;
   leftHanded: boolean;
   showCheckout: boolean;
+  /** sorteo al bull antes de cada partida contra la máquina o local */
+  bullOff: boolean;
+  /** repeticiones a cámara lenta de los grandes momentos */
+  replays: boolean;
   language: 'es' | 'en';
   serverUrl: string;
   personalizedAds: boolean | null;
@@ -143,6 +161,18 @@ export interface Profile {
   seenEvent: string;
   /** cofres ganados (subida de nivel, torneo…) que se abrirán con su animación */
   pendingChests: { type: ChestType; title: string }[];
+  /** récords personales por modo (puntos; en Killer, victorias; en el reloj, menos dardos) */
+  records: Record<string, number>;
+  /** últimos impactos propios para el mapa de calor: x e y en mm empaquetados en un número */
+  hitLog: number[];
+  /** dobles intentados y acertados al cerrar (para el % de cierre por doble) */
+  doubles: Record<string, [number, number]>;
+  /** premios de turno conseguidos (Hat Trick, Tres en la cama…) */
+  awards: Record<string, number>;
+  /** sets de dardo guardados (3 huecos) */
+  loadouts: (DartLook | null)[];
+  /** carrera profesional (gira de 8 torneos con ranking) */
+  career: CareerState | null;
 }
 
 export const PROFILE_KEY = 'diana_profile_v1';
@@ -206,6 +236,8 @@ export function defaultProfile(): Profile {
       sensitivity: 1,
       leftHanded: false,
       showCheckout: true,
+      bullOff: true,
+      replays: true,
       language: 'es',
       serverUrl: (import.meta.env.VITE_SERVER_URL as string | undefined) ?? '',
       personalizedAds: null,
@@ -224,6 +256,12 @@ export function defaultProfile(): Profile {
     liveEvent: null,
     seenEvent: '',
     pendingChests: [],
+    records: {},
+    hitLog: [],
+    doubles: {},
+    awards: {},
+    loadouts: [null, null, null],
+    career: null,
   };
 }
 
@@ -239,6 +277,11 @@ function migrate(p: Partial<Profile>): Profile {
   // quien ya había hecho el tutorial antes de existir la marca no vuelve a cobrar el regalo
   if (merged.tutorial.tips.includes('match')) merged.tutorial.rewarded = true;
   if (!Array.isArray(merged.pendingChests)) merged.pendingChests = [];
+  if (!merged.records || typeof merged.records !== 'object') merged.records = {};
+  if (!Array.isArray(merged.hitLog)) merged.hitLog = [];
+  if (!merged.doubles || typeof merged.doubles !== 'object') merged.doubles = {};
+  if (!merged.awards || typeof merged.awards !== 'object') merged.awards = {};
+  if (!Array.isArray(merged.loadouts) || merged.loadouts.length !== 3) merged.loadouts = [null, null, null];
   if (!merged.chests || merged.chests.length !== 4) merged.chests = [null, null, null, null];
   return merged;
 }

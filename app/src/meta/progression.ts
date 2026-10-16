@@ -26,6 +26,7 @@ export const FEATURE_LEVEL = {
   online: 2,
   club: 3,
   tournament: 4,
+  career: 3,
   challenge: 2,
   season: 2,
   wheel: 1,

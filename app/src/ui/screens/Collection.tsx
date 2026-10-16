@@ -4,9 +4,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { useStore, fmtNum } from '../../core/store';
 import { profileStore, mutate } from '../../meta/profile';
 import { BARRELS, SHAFTS, FLIGHTS, BOARD_SKINS, EMOTES, RARITY_INFO, getItem, statsAt, type ItemDef, type Slot } from '../../meta/catalog';
-import { upgradeInfo, dartStats, equip, upgrade, buyCosmetic } from '../../meta/economy';
+import { upgradeInfo, dartStats, equip, upgrade, buyCosmetic, saveLoadout, useLoadout } from '../../meta/economy';
 import { previewView } from '../../engine/previewView';
-import { ItemThumb, Price, useDragRotate } from '../components/common';
+import { ItemThumb, Modal, Price, useDragRotate } from '../components/common';
 import { Check, Coin, Lock } from '../icons';
 import { closeModal, openModal, toast, ui } from '../state';
 import { audio } from '../../services/audio';
@@ -91,6 +91,9 @@ export function Collection() {
           </b>
           <small>PODER</small>
         </div>
+        <button class="ws-sets" onClick={() => (audio.click(), openModal({ kind: 'loadouts' }))} aria-label="Mis sets de dardo">
+          🎒 Sets
+        </button>
         {slotTab && (
           <button class="ws-zoom" onClick={() => (audio.click(), setFocus(zoomed ? 'all' : slotTab))} aria-label={zoomed ? 'Ver el dardo entero' : 'Acercar la pieza'}>
             {zoomed ? '⤢' : '🔍'}
@@ -364,6 +367,53 @@ export function ItemModal({ id }: { id: string }) {
         )}
       </div>
     </div>
+  );
+}
+
+/** Tres sets de dardo guardados para cambiar de un toque (p. ej. uno de precisión y otro de control). */
+export function LoadoutsModal() {
+  const p = useStore(profileStore);
+  const same = (l: { barrel: string; shaft: string; flight: string } | null) => !!l && l.barrel === p.equipped.barrel && l.shaft === p.equipped.shaft && l.flight === p.equipped.flight;
+  return (
+    <Modal title="🎒 Mis sets de dardo">
+      <div class="col">
+        <div class="muted" style={{ fontSize: '12px', fontWeight: 800 }}>
+          Guarda hasta 3 combinaciones de cuerpo, caña y aletas y cámbialas de un toque.
+        </div>
+        {p.loadouts.map((l, i) => {
+          const st = l ? dartStats(p, l) : null;
+          return (
+            <div key={i} class={'loadout' + (same(l) ? ' on' : '')}>
+              <div class="lo-n">{i + 1}</div>
+              {l ? (
+                <div class="lo-parts">
+                  <ItemThumb id={l.barrel} />
+                  <ItemThumb id={l.shaft} />
+                  <ItemThumb id={l.flight} />
+                </div>
+              ) : (
+                <div class="lo-parts empty">Hueco libre</div>
+              )}
+              <div class="lo-side">
+                {st && <div class="lo-pow">⚡ {dartPower(st)}</div>}
+                {l && !same(l) && (
+                  <button class="btn tiny blue" onClick={() => (audio.whooshUi(), useLoadout(i), net.syncProfile(), toast(`Set ${i + 1} equipado`, 'good'))}>
+                    Equipar
+                  </button>
+                )}
+                {same(l) ? (
+                  <span class="lo-tag">En uso</span>
+                ) : (
+                  <button class="btn tiny gray" onClick={() => (audio.click(), saveLoadout(i), toast(`Dardo guardado en el set ${i + 1}`, 'good'))}>
+                    {l ? 'Sobrescribir' : 'Guardar actual'}
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Modal>
   );
 }
 

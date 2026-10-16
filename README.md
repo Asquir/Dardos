@@ -23,6 +23,13 @@ con anuncios y compras.
 - IA con 7 niveles de dificultad calibrados (de ~20 a ~100 de media) y tabla de cierres profesional; pista de cierre en pantalla.
 - **Zona objetivo iluminada en la diana**: cuando tienes cierre se enciende el segmento al que tirar (verde «¡CIERRA!» si ese dardo gana, dorado si es parte de la ruta), con un aviso «¡Puedes cerrar!» al empezar el turno. También marca el número que toca en Alrededor del reloj y el recomendado en Cricket. Al apuntar ves el nombre del segmento bajo la mira y notas una vibración al cambiar de zona.
 - Se ve cómo apunta el rival (su mira se asienta antes de lanzar) con cámara de retransmisión en su turno; **racha «en llamas»** con dos o más turnos de 100+ seguidos (estela de fuego y más chispas); marcador que cuenta hacia abajo, sacudida al pasarte, **revancha** con un toque desde los resultados y dardos de exhibición en el fondo del inicio.
+- **Juegos de bar**: Killer (hasta 4, con vidas y números sorteados), Shanghái (¡simple, doble y triple gana al instante!), Halve-It (fallar la ronda parte tus puntos por la mitad), Béisbol (9 entradas), Cricket Cut-Throat (tus puntos se los come el rival) y entrenamientos de profesional: **Bob's 27** (dobles) y **121 Checkout** con «casa segura». Todos con reglas en la presentación, objetivo de la ronda iluminado en la diana, bots que los juegan con estrategia propia y récord personal. Se pueden jugar contra la máquina, en local y en salas privadas online.
+- **Carrera profesional gratis**: gira de 8 torneos (Valencia, Bilbao, Zaragoza, Sevilla, Barcelona, Madrid, Canarias y las Finales) con ranking mundial de 32 jugadores, rivales fijos que se repiten, premios en metálico, títulos y unas Finales solo para los 8 mejores; premios de fin de temporada según el puesto.
+- **Sorteo al bull** antes de cada partida contra la máquina o local: quien quede más cerca del centro empieza (nada de «la máquina siempre empieza»).
+- **Premios de turno al estilo de las máquinas de bar** con su animación, fanfarria y locutor: Ton 80, High/Low Ton, Hat Trick, Tres en la cama, Caballo blanco, Shanghái, Big Fish (170), nueve dardos, cierre en el bull, La casa de locos (D1) y **Robin Hood** (un dardo clavado en la cola de otro). Dan monedas en las partidas con apuesta y se coleccionan en el perfil.
+- **Repeticiones a cámara lenta** de los grandes momentos (180, Big Fish, Hat Trick, Robin Hood y el dardo que gana la partida) con cámara que persigue el dardo, franjas de cine y «toca para saltar».
+- **Locutor**: canta las puntuaciones, «Te quedan 32» cuando tienes cierre, «Game shot, y el leg», los premios y la presentación de los jugadores.
+- **Reta a un amigo sin conexión**: Duelo de 9 dardos con números dobles sorteados; se comparte un código y el amigo juega exactamente el mismo reto.
 - **Zona bonus ★ en cada turno** (partidas con apuesta: clasificatorias, online, eventos y torneo): se ilumina en dorado un simple, doble, triple o el bull con su premio en monedas, que crece con la arena. Tirar a por ella o a por los puntos es decisión tuya.
 - **Combos**: triples, dobles, bull o bonus seguidos encadenan un combo con sonido que sube de tono; desde x3 cada dardo bueno suma monedas. El bonus y el mejor combo aparecen en los resultados.
 - **⏩ Acelerar** el turno del rival con un toque (x2, se mantiene durante la partida) y un ritmo entre turnos más ágil.
@@ -37,6 +44,13 @@ con anuncios y compras.
   titanio tornasolado, aletas con relieve y holográficas). Cada pestaña enfoca su pieza, se arrastra para girarla, y cada
   ficha permite probarla montada en el dardo, ver el cambio de **Poder** y mejorarla con una animación de anillos,
   destello y confeti.
+
+**Estadísticas y juego limpio**
+- Pantalla de estadísticas: media de 3 dardos, **primeros 9**, **% de cierre por doble** (y tu doble favorito), evolución de la media en las últimas partidas, **mapa de calor** de dónde caen tus dardos, récords de cada modo y premios conseguidos.
+- Los rivales de la máquina llevan siempre la etiqueta **IA** (también si el servidor rellena una partida online) y en la presentación se ve su media habitual real y el poder de tu dardo.
+- Menos anuncios: como mucho uno cada 3 partidas con copas y 4 minutos; el entrenamiento y los juegos de bar no cuentan.
+- Tras una partida online, añadir al rival a amigos con un toque; compartir el resultado por WhatsApp/Telegram.
+- **Sets de dardo**: 3 combinaciones guardadas para cambiar de un toque.
 
 **Rendimiento en móvil**
 - Calidad automática que baja sola si el móvil no llega a 38 fps (y lo recuerda para la próxima vez); a «baja» solo si va muy justo.

@@ -426,6 +426,17 @@ class AudioEngine {
     this.cymbal(1.8, 0.12, 0.05);
     this.say(this.lang === 'es' ? '¡Ciento ochenta!' : 'One hundred and eighty!', true);
   }
+  /** Fanfarria de los premios de turno (más grande cuanto más raro el premio). */
+  fanfare(tier: number) {
+    const notes = tier >= 4 ? [523, 659, 784, 1047, 1319, 1568, 2093] : tier >= 3 ? [523, 659, 784, 1047, 1319] : [587, 740, 880, 1175];
+    notes.forEach((f, i) => {
+      this.tone(f, 0.32, 'square', 0.035, i * 0.075, this.uiBus);
+      this.tone(f * 2, 0.22, 'triangle', 0.025, i * 0.075 + 0.02, this.uiBus);
+    });
+    this.cymbal(tier >= 3 ? 1.6 : 1, 0.1, notes.length * 0.075);
+    this.cheer(tier >= 3 ? 1.3 : 0.8);
+    this.sparkle(tier >= 3 ? 1.4 : 0.8);
+  }
   /** Latido + subida de tensión (cámara lenta). */
   tension(dur = 1.2) {
     if (!this.ctx) return;

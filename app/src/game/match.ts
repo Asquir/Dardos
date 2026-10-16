@@ -1,8 +1,8 @@
 // Controlador de partida: une reglas, jugadores (humano, bot, online), la vista 3D y la interfaz.
 
 import { resolveHit, scoreAt, targetPoint, SEGMENTS, type Hit, type Target } from '@shared/board';
-import { applyThrow, createMatch, forfeitTurn, threeDartAvg, type MatchConfig, type MatchState, type ThrowEvent } from '@shared/rules';
-import { botThrow, chooseTarget, rng, type BotProfile } from '@shared/bot';
+import { applyThrow, createMatch, forfeitTurn, threeDartAvg, roundTarget, KILLER_MARKS, ROUND_MODES, type MatchConfig, type MatchState, type ThrowEvent } from '@shared/rules';
+import { botThrow, chooseTarget, gaussian, rng, type BotProfile } from '@shared/bot';
 import { checkoutRoute, routeLabel, suggestTarget } from '@shared/checkout';
 import { trophyDelta, type AvatarConfig, type DartLook, type ServerMsg } from '@shared/protocol';
 import { Store } from '../core/store';
@@ -11,7 +11,7 @@ import { engine } from '../engine/renderer';
 import { audio } from '../services/audio';
 import { haptics } from '../services/haptics';
 import { net } from '../services/net';
-import { mutate, profile, isVip } from '../meta/profile';
+import { mutate, profile, isVip, packHit } from '../meta/profile';
 import { ARENAS, arenaForTrophies } from '../meta/arenas';
 import { addXp, awardWinChest, dartStats, track, noteMatchForAds, addSeasonXp } from '../meta/economy';
 import type { ChestType } from '../meta/chests';
@@ -20,6 +20,9 @@ import { currentLiveEvent, scoreEventMatch } from '../meta/liveEvents';
 import { addEventPoints } from '../meta/events';
 import { EMOTES } from '../meta/catalog';
 import { applyTournament, applyChallenge, applyTutorial, type PostMatch } from '../meta/postmatch';
+import { AWARDS, detectAwards, type AwardId } from './awards';
+import { encodeDuel } from '../meta/duel';
+import { applyCareer } from '../meta/career';
 import type { Reward } from '../meta/chests';
 
 export type PlayerKind = 'human' | 'bot' | 'remote';
@@ -33,9 +36,13 @@ export interface MatchPlayer {
   dart: DartLook;
   bot?: BotProfile;
   club?: string;
+  /** id del jugador online (para añadirlo a amigos) */
+  id?: string;
+  /** el servidor lo marca como rival de la máquina: se enseña siempre */
+  ai?: boolean;
 }
 
-export type MatchType = 'ranked' | 'training' | 'tournament' | 'challenge' | 'private' | 'tutorial' | 'online' | 'local' | 'event';
+export type MatchType = 'ranked' | 'training' | 'tournament' | 'challenge' | 'private' | 'tutorial' | 'online' | 'local' | 'event' | 'duel' | 'career';
 
 export interface MatchSetup {
   type: MatchType;
@@ -51,6 +58,8 @@ export interface MatchSetup {
   title?: string;
   /** límite de dardos (desafíos / entrenamiento) */
   dartLimit?: number;
+  /** reto entre amigos: semilla y, si se acepta un código, la puntuación a batir */
+  duel?: { seed: number; rival?: { name: string; score: number } };
 }
 
 export interface Popup {
@@ -90,6 +99,12 @@ export interface MatchResult {
   /** monedas de las zonas bonus y los combos (ya sumadas) */
   bonusCoins?: number;
   bestCombo?: number;
+  /** récord personal batido en este modo */
+  newRecord?: boolean;
+  /** premios de turno conseguidos en la partida */
+  awards?: AwardId[];
+  /** reto entre amigos: tu puntuación y el código para pasarlo */
+  duel?: { score: number; code: string; rival?: { name: string; score: number } };
 }
 
 export interface MatchUI {
@@ -127,6 +142,14 @@ export interface MatchUI {
   bestCombo: number;
   /** turnos de los bots acelerados */
   fast: boolean;
+  /** premio de turno en pantalla (Hat Trick, Tres en la cama…) */
+  award: { key: number; id: AwardId; player: number; also: AwardId[]; coins: number } | null;
+  /** premios del jugador en esta partida */
+  awardsWon: AwardId[];
+  /** sorteo al bull: distancia (mm) de cada jugador, null si aún no ha tirado */
+  bullOff: { dist: (number | null)[]; cur: number; winner: number | null } | null;
+  /** repetición a cámara lenta en marcha */
+  replay: boolean;
 }
 
 export const matchStore = new Store<MatchUI | null>(null);
@@ -152,6 +175,8 @@ export class Match {
   private remoteQueue: ServerMsg[] = [];
   private remoteWake: (() => void) | null = null;
   private turnHits: Hit[] = [];
+  /** dardos de cada jugador en el leg actual (para el nueve dardos) */
+  private legDarts: number[] = [];
   /** dardos del jugador local en esta partida (para eventos y estadísticas) */
   private myHits: Hit[] = [];
   onEnd?: (r: MatchResult) => void;
@@ -183,6 +208,10 @@ export class Match {
       combo: 0,
       bestCombo: 0,
       fast: false,
+      award: null,
+      awardsWon: [],
+      bullOff: null,
+      replay: false,
     };
     matchStore.set(this.ui);
   }
@@ -212,8 +241,16 @@ export class Match {
     this.emit();
     // mientras dura la presentación se compilan los dardos de todos (evita tirones al lanzar)
     const looks = [...new Map(this.setup.players.map((p) => [p.dart.barrel + p.dart.shaft + p.dart.flight, p.dart])).values()];
-    await Promise.all([sleep(1500), v.warmup(looks)]);
+    // los modos menos conocidos enseñan sus reglas un poco más (se puede saltar tocando)
+    const mode = this.setup.config.mode;
+    const introMs = mode === 'x01' || mode === 'free' || this.setup.type === 'tutorial' ? 1500 : 3600;
+    const skip = new Promise<void>((r) => (this.skipIntroFn = r));
+    await Promise.all([Promise.race([sleep(introMs), skip.then(() => sleep(250))]), v.warmup(looks)]);
     if (this.aborted) return;
+    if (this.wantsBullOff()) {
+      await this.runBullOff();
+      if (this.aborted) return;
+    }
     this.ui.phase = 'wait';
     this.emit();
     try {
@@ -250,6 +287,10 @@ export class Match {
     this.view.fire = (this.ui.streak[idx] ?? 0) >= 2;
     if (!this.view.slowMo) engine.timeScale = 1;
     this.showTarget();
+    if (this.ui.state.turn.length === 0) {
+      this.robinTurn = false;
+      this.callRequire(idx);
+    }
     if (idx === this.you && this.ui.state.turn.length === 0) this.pickBonus();
     this.ui.phase = 'aim';
     this.emit();
@@ -288,11 +329,31 @@ export class Match {
       await this.waitRemoteState(true);
       return;
     }
-    await this.view.throwDart({ x: hit.x, y: hit.y, look: pl.dart, bounce: hit.bounce, fromHand: true, cine });
+    await this.view.throwDart({ x: hit.x, y: hit.y, look: pl.dart, bounce: hit.bounce, fromHand: true, cine, robin: this.robinHood(hit) });
     if (this.aborted) return;
     this.onImpact(hit, idx);
     if (cine) this.endCine(hit);
     await this.applyLocal(hit, idx);
+  }
+
+  /** El locutor anuncia lo que te queda cuando ya tienes cierre ("Te quedan 32"). */
+  private callRequire(idx: number) {
+    const s = this.ui.state;
+    if ((s.config.mode !== 'x01' && s.config.mode !== 'c121') || this.setup.players[idx].kind !== 'human') return;
+    const left = s.players[idx].remaining;
+    if (left > 170 || !checkoutRoute(left, 3, s.config.mode === 'c121' || s.config.doubleOut)) return;
+    setTimeout(() => audio.say(`Te quedan ${left}`), 250);
+  }
+
+  /** De vez en cuando, un dardo que cae pegado a otro se clava en su cola: ¡Robin Hood! */
+  private robinTurn = false;
+  private robinHood(hit: Hit): number | undefined {
+    if (hit.bounce || this.setup.type === 'tutorial') return undefined;
+    const i = this.view.robinHoodSpot(hit.x, hit.y);
+    if (i < 0 || Math.random() > 0.4) return undefined;
+    this.robinTurn = true;
+    audio.clank();
+    return i;
   }
 
   /** ¿Lleva dos T20 en el turno? El tercer dardo se ve a cámara lenta. */
@@ -318,6 +379,7 @@ export class Match {
     this.view.setTurnCam(true);
     this.view.fire = (this.ui.streak[idx] ?? 0) >= 2;
     this.clearBonus();
+    if (this.ui.state.turn.length === 0) this.robinTurn = false;
     const pace = this.ui.fast ? FAST : 1;
     if (this.ui.fast && !this.view.slowMo) engine.timeScale = FAST;
     await sleep((this.ui.state.turn.length === 0 ? 380 : 160 + this.r() * 220) / pace);
@@ -330,7 +392,7 @@ export class Match {
     audio.whoosh();
     const cine = this.maxChance();
     if (cine) audio.tension();
-    await this.view.throwDart({ x: hit.x, y: hit.y, look: pl.dart, bounce: hit.bounce, cine });
+    await this.view.throwDart({ x: hit.x, y: hit.y, look: pl.dart, bounce: hit.bounce, cine, robin: this.robinHood(hit) });
     if (this.aborted) return;
     this.onImpact(hit, idx);
     if (cine) this.endCine(hit);
@@ -359,12 +421,193 @@ export class Match {
       this.view.crowdFlash(0.5);
     } else if (hit.points > 0) audio.score(hit.points);
     if (player === this.you) this.ui.dartsUsed++;
+    this.legDarts[player] = (this.legDarts[player] ?? 0) + 1;
     if (this.setup.type === 'challenge') this.ui.challengeHits = [...this.ui.challengeHits, hit];
     const localHuman = this.setup.online ? player === this.you : this.setup.players[player].kind === 'human' && player === 0;
     if (localHuman) this.myHits.push(hit);
-    if (localHuman && this.setup.type !== 'tutorial') track({ type: 'dart', hit });
+    if (localHuman && this.setup.type !== 'tutorial') {
+      track({ type: 'dart', hit });
+      this.recordDart(hit);
+    }
     if (player === this.you && this.setup.type !== 'local' && this.setup.type !== 'tutorial') this.scoreBonus(hit, pos);
     this.emit();
+  }
+
+  // ------------------------------------------------------------------ estadísticas
+
+  /** Guarda el impacto para el mapa de calor y, si el dardo iba a un doble de cierre, el intento. */
+  private recordDart(hit: Hit) {
+    const s = this.ui.state; // todavía sin aplicar el dardo
+    const p = s.players[s.current];
+    let dbl: string | null = null;
+    if (s.config.mode === 'x01' && s.config.doubleOut && p.remaining <= 50) {
+      const route = checkoutRoute(p.remaining, 3 - s.turn.length, true);
+      if (route && route.length === 1 && (route[0][0] === 'D' || route[0] === 'DB')) dbl = route[0];
+    }
+    mutate((pp) => {
+      if (!hit.bounce && Math.hypot(hit.x, hit.y) < 400) {
+        pp.hitLog.push(packHit(hit.x, hit.y));
+        if (pp.hitLog.length > 800) pp.hitLog.splice(0, pp.hitLog.length - 800);
+      }
+      if (dbl) {
+        const d = pp.doubles[dbl] ?? [0, 0];
+        d[0]++;
+        if (dbl === 'DB' ? hit.ring === 'DB' : hit.ring === 'D' && hit.num === parseInt(dbl.slice(1), 10)) d[1]++;
+        pp.doubles[dbl] = d;
+      }
+    });
+  }
+
+  // ------------------------------------------------------------------ sorteo al bull
+
+  /** Contra la máquina o en local se sortea quién empieza tirando al bull (online lo decide el servidor). */
+  private wantsBullOff(): boolean {
+    const t = this.setup.type;
+    if (this.setup.online || this.setup.players.length < 2 || t === 'tutorial' || t === 'challenge') return false;
+    if (this.ui.state.turn.length || this.ui.state.history.length) return false; // partida retomada
+    return profile().settings.bullOff !== false;
+  }
+
+  private async runBullOff() {
+    const n = this.setup.players.length;
+    this.ui.bullOff = { dist: Array(n).fill(null), cur: 0, winner: null };
+    this.say('blue', 'SORTEO AL BULL', 'El más cerca del centro empieza');
+    audio.ready();
+    await sleep(900);
+    for (let i = 0; i < n && !this.aborted; i++) {
+      this.ui.bullOff = { ...this.ui.bullOff!, cur: i };
+      const pl = this.setup.players[i];
+      let x: number;
+      let y: number;
+      if (pl.kind === 'human') {
+        this.view.setTurnCam(false);
+        this.view.setTarget('DB', 'route');
+        this.ui.phase = 'aim';
+        this.emit();
+        const shot = await this.view.humanAim({
+          look: pl.dart,
+          stats: dartStats(profile()),
+          sensitivity: profile().settings.sensitivity,
+          control: profile().settings.control,
+          leftHanded: profile().settings.leftHanded,
+          assist: this.setup.assist,
+        });
+        if (this.aborted || !shot) return;
+        x = shot.x;
+        y = shot.y;
+      } else {
+        this.view.setTurnCam(true);
+        this.ui.phase = 'wait';
+        this.emit();
+        await sleep(350);
+        const sigma = (pl.bot?.skill.sigma ?? 25) * 1.1;
+        await this.view.botAim(0, 0, 0.6);
+        if (this.aborted) return;
+        x = gaussian(this.r) * sigma;
+        y = gaussian(this.r) * sigma;
+      }
+      this.ui.phase = 'wait';
+      const hit = resolveHit(x, y, Math.random());
+      audio.whoosh();
+      await this.view.throwDart({ x: hit.x, y: hit.y, look: pl.dart, bounce: hit.bounce, fromHand: pl.kind === 'human' });
+      if (this.aborted) return;
+      const d = hit.bounce ? 999 : Math.hypot(hit.x, hit.y);
+      if (hit.bounce) audio.clank();
+      else audio.thud(hit.ring === 'DB' ? 1.2 : 1);
+      if (hit.ring === 'DB') audio.bull();
+      const dist: (number | null)[] = [...this.ui.bullOff!.dist];
+      dist[i] = Math.round(d * 10) / 10;
+      this.ui.bullOff = { ...this.ui.bullOff!, dist };
+      if (!hit.bounce) this.view.highlight(hit);
+      const pos = this.view.toScreen(hit.x, hit.y);
+      this.ui.popups = [...this.ui.popups.slice(-4), { id: uid++, x: pos.x, y: pos.y, label: hit.bounce ? 'REBOTE' : `${dist[i]} mm`, points: 0, ring: hit.ring === 'DB' || hit.ring === 'SB' ? hit.ring : 'S' }];
+      this.emit();
+      await sleep(500);
+    }
+    if (this.aborted) return;
+    const dist = this.ui.bullOff!.dist.map((d) => d ?? 999);
+    const best = Math.min(...dist);
+    const winner = dist.indexOf(best);
+    this.ui.bullOff = { ...this.ui.bullOff!, winner };
+    this.view.setTarget(null);
+    this.say('green', `¡EMPIEZA ${this.setup.players[winner].name.toUpperCase()}!`, best < 999 ? `a ${best} mm del centro` : 'todos rebotaron');
+    audio.cheer(0.6);
+    await sleep(1500);
+    if (this.aborted) return;
+    await this.view.clearDarts();
+    this.ui.popups = [];
+    this.ui.state = createMatch(this.setup.config, n, winner);
+    this.ui.bullOff = null;
+    this.updateCheckout();
+    this.emit();
+  }
+
+  // ------------------------------------------------------------------ premios de turno
+
+  /**
+   * Busca premios (Hat Trick, Tres en la cama…) en el turno que acaba de terminar y los enseña.
+   * Devuelve true si hay uno grande en pantalla (sustituye al mensaje normal del turno).
+   */
+  private turnAwards(event: ThrowEvent, idx: number): number {
+    const s = this.ui.state;
+    const last = s.history.at(-1);
+    if (!last || last.player !== idx || this.setup.type === 'tutorial') return 0;
+    const checkout = (event === 'legWon' || event === 'matchWon') && s.legWinner === idx && s.config.mode === 'x01' && !last.bust;
+    const list = detectAwards({
+      mode: s.config.mode,
+      hits: last.hits,
+      total: last.total,
+      bust: last.bust,
+      checkout,
+      startLeft: checkout ? last.total : 0,
+      legDarts: this.legDarts[idx] ?? 0,
+      start: s.config.start,
+    });
+    if (this.robinTurn) {
+      list.push('robinhood');
+      list.sort((a, b) => AWARDS[b].tier - AWARDS[a].tier);
+      this.robinTurn = false;
+    }
+    if (!list.length) return 0;
+    const top = AWARDS[list[0]];
+    const mine = idx === this.you && this.setup.type !== 'local';
+    let coins = 0;
+    if (mine) {
+      for (const a of list) coins += AWARDS[a].coins * this.bonusBase();
+      coins = this.paysBonus ? coins : 0;
+      this.ui.bonusCoins += coins;
+      this.ui.awardsWon = [...this.ui.awardsWon, ...list];
+      mutate((p) => {
+        for (const a of list) p.awards[a] = (p.awards[a] ?? 0) + 1;
+      });
+    }
+    if (top.tier < 2) return top.tier; // los "ton" se quedan en el mensaje normal del turno
+    this.ui.award = { key: uid++, id: top.id, player: idx, also: list.slice(1), coins };
+    audio.fanfare(top.tier);
+    audio.say(top.name.replace(/[¡!]/g, ''), true);
+    if (mine) haptics.heavy();
+    this.view.celebrate(top.tier >= 3 ? 1.1 : 0.8);
+    if (!mine && this.setup.players[idx].kind === 'bot') this.botReact('cool', 0.5);
+    return top.tier;
+  }
+
+  // ------------------------------------------------------------------ repeticiones
+
+  private get replaysOn(): boolean {
+    return !this.setup.online && this.setup.type !== 'tutorial' && profile().settings.replays !== false;
+  }
+
+  private async playReplay() {
+    this.ui.replay = true;
+    this.emit();
+    await this.view.replayLast(1);
+    this.ui.replay = false;
+    this.emit();
+  }
+
+  /** Toque durante la repetición: se salta. */
+  skipReplay() {
+    this.view.skipReplay();
   }
 
   // ------------------------------------------------------------------ bonus y combos
@@ -372,7 +615,7 @@ export class Match {
   /** Solo dan monedas las partidas con algo en juego (si no, se podrían farmear en el entrenamiento). */
   private get paysBonus(): boolean {
     const t = this.setup.type;
-    return t === 'ranked' || t === 'online' || t === 'event' || t === 'tournament';
+    return t === 'ranked' || t === 'online' || t === 'event' || t === 'tournament' || t === 'career';
   }
 
   private bonusBase(): number {
@@ -465,21 +708,23 @@ export class Match {
       this.ui.streak[idx] = 0;
     } else if (event === 'turnEnd' || event === 'legWon' || event === 'matchWon') {
       this.ui.lastTurn = { player: idx, total: turnTotal, bust: false, key: uid++ };
+      const tier = this.turnAwards(event, idx);
+      const won = tier >= 2;
       const streak = (this.ui.streak[idx] = (cfg.mode === 'x01' || cfg.mode === 'free') && turnTotal >= 100 ? (this.ui.streak[idx] ?? 0) + 1 : 0);
       if (cfg.mode === 'x01' || cfg.mode === 'free') {
         if (turnTotal === 180) {
-          this.say('gold', '¡180!', '¡MÁXIMO!');
+          if (!won) this.say('gold', '¡180!', '¡MÁXIMO!');
           audio.oneEighty();
           haptics.heavy();
           this.view.celebrate(1.2);
           if (!human) this.botReact('shock', 0.6);
         } else if (turnTotal >= 140) {
-          this.say('purple', String(turnTotal), '¡Tremendo!');
+          if (!won) this.say('purple', String(turnTotal), turnTotal >= 151 ? '⭐ HIGH TON' : '¡Tremendo!');
           audio.cheer(0.8);
           audio.callScore(turnTotal);
           this.view.celebrate(0.7);
         } else if (turnTotal >= 100) {
-          this.say(streak >= 2 ? 'purple' : 'blue', String(turnTotal), streak >= 2 ? `🔥 ¡EN RACHA! x${streak}` : '¡TON!');
+          if (!won) this.say(streak >= 2 ? 'purple' : 'blue', String(turnTotal), streak >= 2 ? `🔥 ¡EN RACHA! x${streak}` : '✨ LOW TON');
           if (streak >= 2) haptics.medium();
           audio.cheer(0.5);
           audio.callScore(turnTotal);
@@ -490,16 +735,24 @@ export class Match {
         if (human && this.setup.type !== 'tutorial') track({ type: 'turn', total: turnTotal });
       }
       if (event === 'legWon' || event === 'matchWon') {
+        this.legDarts = [];
         // al llegar al límite de rondas gana quien va mejor, no quien lanzó el último dardo
         const w = s.legWinner ?? idx;
         const closed = w === idx && (cfg.mode !== 'cricket' || s.players[w].marks.every((m) => m >= 3));
         const checkout = cfg.mode === 'x01' && closed ? turnTotal : 0;
         const title = event === 'matchWon' ? (closed ? '¡GAME SHOT!' : '¡FIN DE RONDAS!') : '¡LEG!';
         this.say('green', title, `${this.setup.players[w].name}${checkout ? ' · cierre de ' + checkout : event === 'matchWon' && !closed ? ' gana la partida' : ''}`);
+        if (closed && cfg.mode === 'x01') setTimeout(() => audio.say(event === 'matchWon' ? 'Game shot, y la partida' : 'Game shot, y el leg', true), 350);
         audio.cheer(1.2);
         this.view.celebrate(1);
         if (event === 'matchWon') {
-          await sleep(2000);
+          // el dardo que gana la partida, otra vez a cámara lenta
+          if (closed && this.replaysOn) {
+            await sleep(1100);
+            if (this.aborted) return;
+            await this.playReplay();
+            await sleep(500);
+          } else await sleep(2000);
           if (this.aborted) return;
           if (this.setup.online) return this.awaitRemoteEnd(s.winner ?? w);
           this.finish(s.winner ?? w, 'win');
@@ -507,6 +760,12 @@ export class Match {
         }
       }
       if (!human && this.setup.players[idx].kind === 'bot' && turnTotal >= 100) this.botReact('go', 0.35);
+      // los momentazos (180, Big Fish, Hat Trick…) se repiten
+      if (tier >= 3 && this.replaysOn) {
+        await sleep(1300);
+        if (this.aborted) return;
+        await this.playReplay();
+      }
     }
     this.ui.phase = 'between';
     this.emit();
@@ -527,6 +786,12 @@ export class Match {
   }
 
   private curTarget: Target | null = null;
+  private skipIntroFn: (() => void) | null = null;
+
+  /** Toque durante la presentación: empieza ya. */
+  skipIntro() {
+    this.skipIntroFn?.();
+  }
   private aimAt(t: Target | null, kind?: 'finish' | 'route' | 'score', wedge?: boolean) {
     this.curTarget = t;
     this.view.setTarget(t, kind, wedge);
@@ -540,12 +805,13 @@ export class Match {
     const p = s.players[s.current];
     const dartsLeft = 3 - s.turn.length;
     switch (s.config.mode) {
+      case 'c121':
       case 'x01': {
-        const route = p.remaining <= 170 ? checkoutRoute(p.remaining, dartsLeft, s.config.doubleOut) : null;
+        const route = p.remaining <= 170 ? checkoutRoute(p.remaining, dartsLeft, s.config.mode === 'c121' || s.config.doubleOut) : null;
         if (route && s.turn.length === 0) audio.ready();
         if (route) return this.aimAt(route[0], route.length === 1 ? 'finish' : 'route');
         // sin cierre: sugerencia para dejar una buena salida (solo cuando ya se acerca el final)
-        if (p.remaining <= 200) return this.aimAt(suggestTarget(p.remaining, dartsLeft, s.config.doubleOut), 'score');
+        if (p.remaining <= 200) return this.aimAt(suggestTarget(p.remaining, dartsLeft, s.config.mode === 'c121' || s.config.doubleOut), 'score');
         return this.aimAt(null);
       }
       case 'atc': {
@@ -554,6 +820,22 @@ export class Match {
       }
       case 'cricket':
         return this.aimAt(chooseTarget(s, s.current), 'route');
+      case 'shanghai': {
+        // primero el triple; si ya cayó, lo que falte para el Shanghái
+        const t = chooseTarget(s, s.current);
+        return this.aimAt(t, s.turn.length && t !== 'T' + (s.turnNo + 1) ? 'finish' : 'route');
+      }
+      case 'baseball':
+      case 'halveit':
+      case 'bobs27': {
+        const t = roundTarget(s)!;
+        return this.aimAt(t, 'route', t[0] === 'S');
+      }
+      case 'killer': {
+        const me = s.players[s.current];
+        const t = me.killerMarks >= KILLER_MARKS ? chooseTarget(s, s.current) : 'S' + me.num;
+        return this.aimAt(t, me.killerMarks >= KILLER_MARKS ? 'finish' : 'route', true);
+      }
       default:
         return this.aimAt(null);
     }
@@ -561,12 +843,12 @@ export class Match {
 
   private updateCheckout() {
     const s = this.ui.state;
-    if (s.config.mode !== 'x01' || !profile().settings.showCheckout) {
+    if ((s.config.mode !== 'x01' && s.config.mode !== 'c121') || !profile().settings.showCheckout) {
       this.ui.checkout = '';
       return;
     }
     const p = s.players[s.current];
-    const route = p.remaining <= 170 ? checkoutRoute(p.remaining, 3 - s.turn.length, s.config.doubleOut) : null;
+    const route = p.remaining <= 170 ? checkoutRoute(p.remaining, 3 - s.turn.length, s.config.mode === 'c121' || s.config.doubleOut) : null;
     this.ui.checkout = routeLabel(route);
   }
 
@@ -772,6 +1054,7 @@ export class Match {
     engine.timeScale = 1;
     const res: MatchResult = {
       bestCombo: this.ui.bestCombo,
+      awards: this.ui.awardsWon,
       won: winner === you && reason !== 'limit',
       winner,
       reason,
@@ -854,33 +1137,63 @@ export class Match {
         res.coins = res.won ? 150 + setup.arena * 60 : 0;
         p.coins += res.coins;
         addSeasonXp(p, res.won ? 25 : 10);
-      } else if (setup.type === 'tournament') {
+      } else if (setup.type === 'tournament' || setup.type === 'career') {
         res.xp = res.won ? 40 : 15;
         addSeasonXp(p, res.won ? 20 : 8);
       } else if (setup.type === 'challenge') {
         res.xp = 15;
         addSeasonXp(p, 15);
+      } else if (setup.type === 'duel') {
+        res.xp = reason === 'forfeit' ? 0 : 10;
+        addSeasonXp(p, 6);
+      }
+      // récords de los modos de práctica y de bar
+      if (reason !== 'forfeit' && setup.type !== 'challenge') {
+        const mode = s.config.mode;
+        if (mode === 'killer') {
+          if (res.won) p.records.killer = (p.records.killer ?? 0) + 1;
+        } else if (ROUND_MODES.includes(mode) || mode === 'c121') {
+          if (p.records[mode] === undefined || me.points > p.records[mode]) {
+            res.newRecord = p.records[mode] !== undefined;
+            p.records[mode] = me.points;
+          }
+        } else if (mode === 'atc' && me.remaining > 21) {
+          if (p.records.atc === undefined || me.darts < p.records.atc) {
+            res.newRecord = p.records.atc !== undefined;
+            p.records.atc = me.darts;
+          }
+        }
       }
       if (reason !== 'forfeit' && this.ui.bonusCoins > 0) {
         res.bonusCoins = this.ui.bonusCoins;
         p.coins += this.ui.bonusCoins;
       }
       if (res.xp) res.levelUps = addXp(p, res.xp);
-      p.history = [{ at: Date.now(), mode: setup.type, opponent: opp.name, won: res.won, avg: Math.round(avg * 10) / 10, online: !!setup.online }, ...p.history].slice(0, 30);
+      const first9 = this.myHits.slice(0, 9);
+      const f9 = s.config.mode === 'x01' && first9.length === 9 ? Math.round((first9.reduce((a, h) => a + h.points, 0) / 3) * 10) / 10 : undefined;
+      p.history = [{ at: Date.now(), mode: setup.type, opponent: opp.name, won: res.won, avg: Math.round(avg * 10) / 10, online: !!setup.online, game: s.config.mode, f9 }, ...p.history].slice(0, 30);
     });
 
+    if (setup.type === 'duel' && setup.duel) {
+      const score = s.players[you].points;
+      const rival = setup.duel.rival;
+      res.won = !rival || score > rival.score;
+      res.duel = { score, rival, code: encodeDuel({ seed: setup.duel.seed, score, name: profile().name }) };
+    }
     if (isRanked && res.won) {
       res.chest = awardWinChest(setup.arena);
       res.chestFull = res.chest === null;
     }
     // progreso de torneo, desafío y tutorial: se guarda ya (no al pulsar «Continuar»)
     if (setup.type === 'tournament') res.post = applyTournament(res.won);
+    else if (setup.type === 'career') res.post = applyCareer(res.won);
     else if (setup.type === 'challenge') res.post = applyChallenge(res.challengeScore ?? 0, res.stars ?? 0);
     else if (setup.type === 'tutorial') res.post = applyTutorial();
     if (setup.type !== 'tutorial' && setup.type !== 'challenge') {
       if (!solo) track({ type: 'match', won: res.won, online: setup.type === 'online', checkoutDouble: res.won && s.config.mode === 'x01' && s.config.doubleOut && reason === 'win', ranked: isRanked });
       if (setup.type === 'training' && reason !== 'forfeit') track({ type: 'training' });
-      noteMatchForAds();
+      // el entrenamiento y los juegos de bar no cuentan para los anuncios
+      if (isRanked || setup.type === 'event' || setup.type === 'tournament' || setup.type === 'career') noteMatchForAds();
     } else if (setup.type === 'challenge') track({ type: 'training' });
 
     if (res.won) {

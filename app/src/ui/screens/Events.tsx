@@ -14,6 +14,9 @@ import { useState } from 'preact/hooks';
 import { tournamentEntry } from './Tournament';
 import { Coin } from '../icons';
 import { LiveEventCard } from './LiveEvent';
+import { MODES } from '../../meta/modes';
+import type { MatchConfig } from '@shared/rules';
+import { careerRank } from '../../meta/career';
 
 export function Events() {
   const p = useStore(profileStore);
@@ -23,6 +26,7 @@ export function Events() {
   const tomorrow = new Date();
   tomorrow.setHours(24, 0, 0, 0);
   const tLocked = p.level < FEATURE_LEVEL.tournament;
+  const careerLocked = p.level < FEATURE_LEVEL.career;
   const cLocked = p.level < FEATURE_LEVEL.challenge;
   return (
     <div class="screen dim">
@@ -38,6 +42,22 @@ export function Events() {
             </div>
           </button>
         )}
+        <button
+          class={'event-card' + (careerLocked ? ' locked' : '')}
+          data-lock={`🔒 Nivel ${FEATURE_LEVEL.career}`}
+          style={{ background: 'linear-gradient(135deg,#0f6b5a,#1f3dff 70%,#7a2bd6)' }}
+          onClick={() => (careerLocked ? toast(`La carrera se desbloquea en el nivel ${FEATURE_LEVEL.career}`) : (audio.click(), go('career')))}
+        >
+          <div class="big-ic">🌍</div>
+          <div class="grow" style={{ textAlign: 'left' }}>
+            <h3 class="outline">
+              Carrera profesional <span class="new-tag">NUEVO</span>
+            </h3>
+            <p>Gira de 8 torneos gratis, ranking mundial y Finales para los 8 mejores.</p>
+            <p>{p.career ? `Temporada ${p.career.season} · puesto #${careerRank(p.career)} · ${p.career.titles} títulos` : '¡Empieza tu carrera desde abajo!'}</p>
+          </div>
+        </button>
+
         <button
           class={'event-card' + (tLocked ? ' locked' : '')}
           data-lock={`🔒 Nivel ${FEATURE_LEVEL.tournament}`}
@@ -85,16 +105,35 @@ export function Events() {
         <TrainingCard icon="🆓" title="Lanzamiento libre" desc="10 turnos para mejorar tu media." onClick={() => startTraining('free', false)} color="#2c3a8f" />
 
         <div class="section-title outline" style={{ margin: '6px 2px 0' }}>
+          Juegos de bar <span class="new-tag">NUEVO</span> <span class="line" />
+        </div>
+        <TrainingCard icon={MODES.killer.icon} title="Killer contra 2 rivales" desc={MODES.killer.short} onClick={() => startTraining('killer', true)} color="#8a1f3a" best={bestText(p, 'killer')} />
+        <TrainingCard icon="🗡️" title="Cricket Cut-Throat (3 jugadores)" desc="Tus puntos se los come el rival: gana quien menos tenga." onClick={() => startTraining('cutthroat', true)} color="#8a1f3a" />
+        <TrainingCard icon={MODES.shanghai.icon} title="Shanghái" desc={MODES.shanghai.short} onClick={() => startTraining('shanghai', true)} color="#8a1f3a" best={bestText(p, 'shanghai')} />
+        <TrainingCard icon={MODES.halveit.icon} title="Halve-It" desc={MODES.halveit.short} onClick={() => startTraining('halveit', true)} color="#8a1f3a" best={bestText(p, 'halveit')} />
+        <TrainingCard icon={MODES.baseball.icon} title="Béisbol" desc={MODES.baseball.short} onClick={() => startTraining('baseball', true)} color="#8a1f3a" best={bestText(p, 'baseball')} />
+        <TrainingCard icon={MODES.bobs27.icon} title="Bob's 27 (dobles)" desc={MODES.bobs27.short} onClick={() => startTraining('bobs27', false)} color="#8a1f3a" best={bestText(p, 'bobs27')} />
+        <TrainingCard icon={MODES.c121.icon} title="121 Checkout" desc={MODES.c121.short} onClick={() => startTraining('c121', false)} color="#8a1f3a" best={bestText(p, 'c121')} />
+
+        <div class="section-title outline" style={{ margin: '6px 2px 0' }}>
           Con amigos <span class="line" />
         </div>
         <TrainingCard icon="👥" title="Partida local (pasar el móvil)" desc="De 2 a 4 jugadores en el mismo dispositivo." onClick={() => openModal({ kind: 'localSetup' })} color="#5a2bb0" />
+        <TrainingCard icon="⚔️" title="Reta a un amigo (sin conexión)" desc="Juega 9 dardos y pásale el código: él juega el mismo reto." onClick={() => openModal({ kind: 'duel' })} color="#5a2bb0" best={bestText(p, 'duel9')} />
         <TrainingCard icon="🔑" title="Sala privada online" desc="Crea una sala y comparte el código con un amigo." onClick={() => openModal({ kind: 'privateRoom' })} color="#5a2bb0" />
       </div>
     </div>
   );
 }
 
-function TrainingCard({ icon, title, desc, onClick, color }: { icon: string; title: string; desc: string; onClick: () => void; color: string }) {
+/** Récord personal de un modo (si ya se ha jugado). */
+function bestText(p: ReturnType<typeof profileStore.get>, mode: string): string | undefined {
+  const b = p.records?.[mode];
+  if (!b) return undefined;
+  return mode === 'killer' ? `🏆 ${b} victorias` : mode === 'c121' ? `🏅 Récord: hasta ${b}` : `🏅 Récord: ${b}`;
+}
+
+function TrainingCard({ icon, title, desc, onClick, color, best }: { icon: string; title: string; desc: string; onClick: () => void; color: string; best?: string }) {
   return (
     <button class="event-card" style={{ background: `linear-gradient(135deg, ${color}, #141a46)`, padding: '10px 12px' }} onClick={() => (audio.click(), onClick())}>
       <div class="big-ic" style={{ fontSize: '34px', width: '48px' }}>
@@ -105,6 +144,7 @@ function TrainingCard({ icon, title, desc, onClick, color }: { icon: string; tit
           {title}
         </h3>
         <p>{desc}</p>
+        {best && <p class="tc-best">{best}</p>}
       </div>
     </button>
   );
@@ -121,11 +161,14 @@ export function challengeAfterMatch(r: MatchResult) {
   showPost(r.post);
 }
 
+type LocalMode = '301' | '501' | 'cricket' | 'cutthroat' | 'atc' | 'killer' | 'shanghai' | 'halveit' | 'baseball';
+const LOCAL_MODES: LocalMode[] = ['301', '501', 'cricket', 'cutthroat', 'atc', 'killer', 'shanghai', 'halveit', 'baseball'];
+
 export function LocalSetupModal() {
   const [names, setNames] = useState(['Jugador 1', 'Jugador 2']);
-  const [mode, setMode] = useState<'301' | '501' | 'cricket' | 'atc'>('301');
+  const [mode, setMode] = useState<LocalMode>('301');
   const start = () => {
-    const cfg = mode === 'cricket' ? { mode: 'cricket' as const } : mode === 'atc' ? { mode: 'atc' as const } : { mode: 'x01' as const, start: +mode, doubleOut: mode === '501' };
+    const cfg: MatchConfig = mode === '301' || mode === '501' ? { mode: 'x01', start: +mode, doubleOut: mode === '501' } : mode === 'cutthroat' ? { mode: 'cricket', cutthroat: true } : { mode };
     closeModal();
     go('game');
     launch(localSetup(names.map((n, i) => n.trim() || `Jugador ${i + 1}`), cfg));
@@ -144,13 +187,14 @@ export function LocalSetupModal() {
             + Jugador
           </button>
         </div>
-        <div class="seg">
-          {(['301', '501', 'cricket', 'atc'] as const).map((m) => (
+        <div class="seg wrap">
+          {LOCAL_MODES.map((m) => (
             <button key={m} class={mode === m ? 'on' : ''} onClick={() => setMode(m)}>
-              {m === 'atc' ? 'Reloj' : m === 'cricket' ? 'Cricket' : m}
+              {m === '301' || m === '501' ? m : m === 'cutthroat' ? '🗡️ Cut-Throat' : MODES[m].icon + ' ' + (m === 'atc' ? 'Reloj' : MODES[m].name)}
             </button>
           ))}
         </div>
+        {mode !== '301' && mode !== '501' && <div class="muted" style={{ fontSize: '12px', fontWeight: 800 }}>{mode === 'cutthroat' ? 'Cricket al revés: tus puntos van al rival.' : MODES[mode].short}</div>}
         <button class="btn block" onClick={start}>
           ¡Empezar!
         </button>

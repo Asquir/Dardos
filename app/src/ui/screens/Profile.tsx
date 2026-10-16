@@ -13,6 +13,7 @@ import { claimAchievement } from '../../meta/economy';
 import { ARENAS, arenaForTrophies } from '../../meta/arenas';
 import { bumpCurrency } from '../state';
 import { EMBLEMS } from './Social';
+import { StatsPanel } from './Stats';
 
 export function Profile() {
   const p = useStore(profileStore);
@@ -36,8 +37,6 @@ export function Profile() {
     };
   }, []);
   const [tab, setTab] = useState<'stats' | 'ach' | 'hist'>('stats');
-  const avg = p.stats.darts ? (p.stats.points / p.stats.darts) * 3 : 0;
-  const winRate = p.stats.matches ? Math.round((p.stats.wins / p.stats.matches) * 100) : 0;
   const claimable = ACHIEVEMENTS.filter((a) => {
     const c = p.achievements[a.id] ?? 0;
     return c < a.tiers.length && a.value(p) >= a.tiers[c];
@@ -88,39 +87,7 @@ export function Profile() {
         </div>
       </div>
       <div class="scroll grow content pad" style={{ paddingTop: '10px' }}>
-        {tab === 'stats' && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-            {(
-              [
-                ['Partidas', p.stats.matches],
-                ['Victorias', `${p.stats.wins} (${winRate}%)`],
-                ['Media de 3 dardos', avg.toFixed(1)],
-                ['Mejor media', p.stats.bestAvg.toFixed(1)],
-                ['180s', p.stats.s180],
-                ['Turnos de 100+', p.stats.tons],
-                ['Mayor cierre', p.stats.bestCheckout || '-'],
-                ['Leg más rápido (501)', p.stats.bestLegDarts ? p.stats.bestLegDarts + ' dardos' : '-'],
-                ['Triples', fmtNum(p.stats.trebles)],
-                ['Bulls', fmtNum(p.stats.bulls)],
-                ['Dardos lanzados', fmtNum(p.stats.darts)],
-                ['Mejor racha', p.stats.bestStreak],
-                ['Victorias online', p.stats.onlineWins],
-                ['Torneos ganados', p.stats.tournamentsWon],
-                ['Cofres abiertos', p.stats.chestsOpened],
-                ['Copas máximas', fmtNum(p.bestTrophies)],
-              ] as [string, string | number][]
-            ).map(([k, v]) => (
-              <div key={k} class="panel" style={{ padding: '10px' }}>
-                <div class="muted" style={{ fontSize: '11px', fontWeight: 800 }}>
-                  {k}
-                </div>
-                <div class="display" style={{ fontSize: '20px' }}>
-                  {v}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        {tab === 'stats' && <StatsPanel />}
         {tab === 'ach' && (
           <div>
             {ACHIEVEMENTS.map((a) => {

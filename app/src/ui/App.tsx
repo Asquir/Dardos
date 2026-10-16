@@ -26,6 +26,7 @@ import { Season } from './screens/Season';
 import { Game } from './screens/Game';
 import { Matchmaking } from './screens/Matchmaking';
 import { Tournament } from './screens/Tournament';
+import { Career } from './screens/Career';
 import { Onboarding } from './screens/Onboarding';
 import { LiveEvent } from './screens/LiveEvent';
 import { ModalHost } from './overlays/Modals';
@@ -45,9 +46,9 @@ const NAV: { id: ScreenName; label: string; Icon: typeof ShopIco }[] = [
   { id: 'events', label: 'Eventos', Icon: EventsIco },
 ];
 
-const LOW_POWER: ScreenName[] = ['shop', 'events', 'social', 'tournament'];
+const LOW_POWER: ScreenName[] = ['shop', 'events', 'social', 'tournament', 'career'];
 const NO_CHROME: ScreenName[] = ['game', 'matchmaking', 'onboarding', 'avatar', 'profile', 'season'];
-const NO_NAV: ScreenName[] = [...NO_CHROME, 'profile', 'season', 'tournament', 'liveEvent'];
+const NO_NAV: ScreenName[] = [...NO_CHROME, 'profile', 'season', 'tournament', 'career', 'liveEvent'];
 
 export function App() {
   const s = useStore(ui);
@@ -137,6 +138,8 @@ function Screen({ name }: { name: ScreenName }) {
       return <Game />;
     case 'matchmaking':
       return <Matchmaking />;
+    case 'career':
+      return <Career />;
     case 'tournament':
       return <Tournament />;
     case 'onboarding':

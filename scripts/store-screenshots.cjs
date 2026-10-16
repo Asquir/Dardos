@@ -59,6 +59,9 @@ const profile = (extra = {}) => ({
   await page.evaluate(async () => {
     const d = window.__diana;
     const { botPlayer, humanPlayer, launch } = await import('/src/game/launch.ts');
+    // la captura empieza directamente en el turno del jugador
+    d.profile().settings.bullOff = false;
+    d.profile().settings.replays = false;
     d.go('game');
     const m = launch({ type: 'training', config: { mode: 'x01', start: 501, doubleOut: true }, arena: 4, players: [humanPlayer(), botPlayer(4, { name: 'La Pantera', seed: 77 })], starter: 0 });
     window.__m = m;
@@ -82,7 +85,7 @@ const profile = (extra = {}) => ({
   await page.evaluate(() => window.__diana.go('shop'));
   await shot('4-tienda', 3000);
   await page.evaluate(() => window.__diana.go('events'));
-  await shot('5-eventos', 3000);
+  await shot('5-eventos', 7000);
   await page.evaluate(() => window.__diana.go('liveEvent'));
   await shot('6-evento-en-vivo', 3000);
   await page.evaluate(() => window.__diana.go('avatar'));

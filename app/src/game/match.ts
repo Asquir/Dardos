@@ -481,7 +481,7 @@ export class Match {
       let y: number;
       if (pl.kind === 'human') {
         this.view.setTurnCam(false);
-        this.view.setTarget('DB', 'route');
+        this.view.setTarget('DB', 'route', false, 'SORTEO');
         this.ui.phase = 'aim';
         this.emit();
         const shot = await this.view.humanAim({
@@ -794,7 +794,10 @@ export class Match {
   }
   private aimAt(t: Target | null, kind?: 'finish' | 'route' | 'score', wedge?: boolean) {
     this.curTarget = t;
-    this.view.setTarget(t, kind, wedge);
+    // la chapa solo habla de "cierre" en X01; en el resto de modos es el objetivo de la ronda
+    const mode = this.ui.state.config.mode;
+    const sub = mode === 'x01' || mode === 'c121' ? undefined : mode === 'killer' ? (kind === 'finish' ? 'RIVAL' : 'TU NÚMERO') : mode === 'shanghai' && kind === 'finish' ? '¡SHANGHÁI!' : 'OBJETIVO';
+    this.view.setTarget(t, kind, wedge, sub);
   }
 
   /** Ilumina en la diana la zona a la que conviene tirar con el siguiente dardo. */

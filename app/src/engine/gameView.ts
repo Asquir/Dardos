@@ -42,6 +42,7 @@ interface Glow {
   pin: THREE.Sprite;
   t: number;
   key: string;
+  big?: boolean;
 }
 
 export interface AimStats {
@@ -214,7 +215,7 @@ const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 
 export class GameView implements View {
   scene = new THREE.Scene();
   camera = new THREE.PerspectiveCamera(30, 1, 0.02, 40);
-  bloom = { strength: 0.42, radius: 0.55, threshold: 0.86 };
+  bloom = { strength: 0.34, radius: 0.5, threshold: 0.9 };
   exposure = 1.05;
   grade: Partial<Grade> = { ...ARENA_GRADES[0] };
   private baseGrade: Partial<Grade> = ARENA_GRADES[0];
@@ -344,14 +345,14 @@ export class GameView implements View {
    * Ilumina en la diana la zona a la que conviene tirar.
    * `kind`: 'finish' = ese dardo cierra, 'route' = parte de la ruta de cierre, 'score' = sugerencia para sumar.
    */
-  setTarget(t: Target | null, kind: 'finish' | 'route' | 'score' = 'score', wedge = false) {
-    const key = t ? `${t}|${kind}|${wedge}` : '';
+  setTarget(t: Target | null, kind: 'finish' | 'route' | 'score' = 'score', wedge = false, subLabel?: string) {
+    const key = t ? `${t}|${kind}|${wedge}|${subLabel ?? ''}` : '';
     if (this.targetGlow?.key === key) return;
     if (this.targetGlow) this.disposeGlow(this.targetGlow);
     this.targetGlow = null;
     if (!t) return;
     const color = kind === 'finish' ? '#3dff8a' : kind === 'route' ? '#ffd23a' : '#5fd0ff';
-    const sub = kind === 'finish' ? '¡CIERRA!' : kind === 'route' ? 'CIERRE' : '';
+    const sub = subLabel ?? (kind === 'finish' ? '¡CIERRA!' : kind === 'route' ? 'CIERRE' : '');
     this.targetGlow = this.makeGlow(t, wedge, color, targetLabel(t), sub, key);
   }
 
@@ -379,10 +380,10 @@ export class GameView implements View {
     this.env?.flash(0.5);
   }
 
-  private makeGlow(t: Target, wedge: boolean, color: string, label: string, sub: string, key: string, whiten = 0.45): Glow {
+  private makeGlow(t: Target, wedge: boolean, color: string, label: string, sub: string, key: string, whiten = 0.2): Glow {
     const group = new THREE.Group();
-    // borde luminoso (zona algo más grande, detrás) + relleno claro encima
-    const edge = new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(1.8), transparent: true, opacity: 0.9, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
+    // borde de color (sin pasarse de brillo: con el bloom las zonas grandes deslumbraban) + relleno suave
+    const edge = new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(1.05), transparent: true, opacity: 0.7, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
     const halo = new THREE.Mesh(targetGeometry(t, wedge, 2.2), edge);
     halo.renderOrder = 8;
     const fill = new THREE.MeshBasicMaterial({ color: new THREE.Color(color).lerp(new THREE.Color('#ffffff'), whiten), transparent: true, opacity: 0.55, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
@@ -405,7 +406,9 @@ export class GameView implements View {
     pin.scale.set(0.09, 0.045, 1);
     pin.renderOrder = 11;
     this.scene.add(pin);
-    return { group, fill, edge, pin, t: 0, key };
+    // las zonas grandes (cuña entera, anillos completos) se rellenan menos para no deslumbrar
+    const big = wedge || t === 'DANY' || t === 'TANY';
+    return { group, fill, edge, pin, t: 0, key, big };
   }
 
   private disposeGlow(g: Glow) {
@@ -861,8 +864,11 @@ export class GameView implements View {
       else if (Math.hypot(hit.x, hit.y) < BOARD.trebleIn) [r0, r1] = [BOARD.outerBull, BOARD.trebleIn];
       geo = new THREE.RingGeometry(r0 * MM, r1 * MM, 6, 1, (c - 9) * deg, 18 * deg);
     }
-    const color = hit.ring === 'T' || hit.ring === 'DB' ? 0xffd23a : hit.ring === 'D' ? 0x6dffb0 : 0xffffff;
-    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+    const color = hit.ring === 'T' || hit.ring === 'DB' ? 0xffd23a : hit.ring === 'D' ? 0x6dffb0 : 0xfff4dc;
+    // los simples son zonas grandes: destello más suave
+    const op = hit.ring === 'S' ? 0.4 : 0.7;
+    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: op, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+    mesh.userData.op = op;
     mesh.position.z = 0.0015;
     this.board.group.add(mesh);
     this.highlights.push({ mesh, t: 0 });
@@ -1389,10 +1395,12 @@ export class GameView implements View {
       const gold = tg === this.bonusGlow;
       tg.t += dt;
       const pulse = 0.5 + 0.5 * Math.sin(tg.t * (gold ? 6 : 4.2));
-      tg.fill.opacity = gold ? 0.2 + pulse * 0.3 : 0.38 + pulse * 0.4;
-      tg.edge.opacity = gold ? 0.5 + pulse * 0.35 : 0.7 + pulse * 0.3;
+      const k = tg.big ? 0.45 : 1;
+      tg.fill.opacity = (gold ? 0.14 + pulse * 0.2 : 0.22 + pulse * 0.24) * k;
+      tg.edge.opacity = (gold ? 0.4 + pulse * 0.3 : 0.45 + pulse * 0.3) * (tg.big ? 0.8 : 1);
       tg.group.visible = this.mode === 'game';
-      tg.pin.visible = this.mode === 'game' && !tg.pin.userData.hidden;
+      // al apuntar (cámara cerrada) la chapa estorba y se sale de la pantalla
+      tg.pin.visible = this.mode === 'game' && !tg.pin.userData.hidden && this.zoom < 1.08;
       const ps = (0.09 * (1 + pulse * (gold ? 0.12 : 0.06))) / Math.max(1, this.zoom * 0.85);
       tg.pin.scale.set(ps, ps / 2, 1);
     }
@@ -1500,7 +1508,8 @@ export class GameView implements View {
       const h = this.highlights[i];
       h.t += dt;
       const m = h.mesh.material as THREE.MeshBasicMaterial;
-      m.opacity = 0.85 * Math.max(0, 1 - h.t / 0.9) * (0.75 + 0.25 * Math.sin(h.t * 30));
+      // se apaga suave (antes parpadeaba a ~5 veces por segundo)
+      m.opacity = ((h.mesh.userData.op as number) ?? 0.7) * Math.pow(Math.max(0, 1 - h.t / 0.9), 1.5);
       if (h.t > 0.9) {
         h.mesh.removeFromParent();
         h.mesh.geometry.dispose();
